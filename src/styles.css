@@ -337,6 +337,35 @@ body {
   font-family: 'Times New Roman', 'Cambria Math', serif;
 }
 
+.keypad-toggle {
+  margin-top: 6px;
+  padding: 0 4px;
+  font-size: 13px;
+  color: var(--accent);
+}
+
+/* 5 columns stay ≥ 50px wide in the 320px panel. */
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.keypad-key {
+  min-height: var(--tap);
+}
+
+.keypad-key.key-fn {
+  background: #f1f3f6;
+  font-family: inherit;
+  font-size: 15px;
+}
+
+.keypad-key.key-wide {
+  grid-column: span 2;
+}
+
 .examples {
   margin-top: 4px;
   font-size: 13px;

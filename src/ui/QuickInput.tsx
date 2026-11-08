@@ -1,13 +1,27 @@
 import { useRef, useState } from 'react';
+import { nextPointName } from '../model/scene';
 import { useAppStore } from '../store/useAppStore';
+import { applyKey, type KeypadAction } from './keypadEdit';
+import { NumericKeypad } from './NumericKeypad';
 
 const EXAMPLES = ['A(1, 2, 3)', 'B(0, √3, 1/2)', 'u = (1, -1, 2)', 'AB', '線段 BC', '直線 AC', '平面 ABC'];
-/** Symbols that are awkward to reach on the iPad on-screen keyboard. */
+/** Symbols that are awkward to reach on the iPad on-screen keyboard (shown in system-keyboard mode). */
 const SYMBOLS = ['(', ')', ',', '=', '-', '/', '√', 'π'];
+const MODE_KEY = 'quickInput.keypadMode';
+
+function loadKeypadMode(): boolean {
+  try {
+    return localStorage.getItem(MODE_KEY) !== 'system';
+  } catch {
+    return true;
+  }
+}
 
 export function QuickInput() {
   const runCommand = useAppStore((s) => s.runCommand);
+  const scene = useAppStore((s) => s.scene);
   const [text, setText] = useState('');
+  const [keypad, setKeypad] = useState(loadKeypadMode);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -22,16 +36,30 @@ export function QuickInput() {
     inputRef.current?.focus();
   };
 
-  const insert = (sym: string) => {
+  const edit = (action: KeypadAction) => {
     const el = inputRef.current;
     const start = el?.selectionStart ?? text.length;
     const end = el?.selectionEnd ?? text.length;
-    const next = text.slice(0, start) + sym + text.slice(end);
-    setText(next);
+    const r = applyKey(text, start, end, action);
+    setText(r.text);
     requestAnimationFrame(() => {
       el?.focus();
-      el?.setSelectionRange(start + sym.length, start + sym.length);
+      el?.setSelectionRange(r.caret, r.caret);
     });
+  };
+
+  const insert = (sym: string) => edit({ type: 'insert', text: sym });
+
+  const toggleMode = () => {
+    const next = !keypad;
+    setKeypad(next);
+    try {
+      localStorage.setItem(MODE_KEY, next ? 'keypad' : 'system');
+    } catch {
+      /* storage unavailable: the choice just isn't remembered */
+    }
+    // Re-focus so the system keyboard opens right away when switching to it.
+    requestAnimationFrame(() => inputRef.current?.focus());
   };
 
   return (
@@ -57,26 +85,41 @@ export function QuickInput() {
           autoComplete="off"
           spellCheck={false}
           enterKeyHint="done"
+          inputMode={keypad ? 'none' : 'text'}
         />
         <button type="submit" className="btn btn-primary">
           新增
         </button>
       </form>
 
-      <div className="symbol-row" role="group" aria-label="插入符號">
-        {SYMBOLS.map((s) => (
-          <button
-            key={s}
-            type="button"
-            className="btn btn-symbol"
-            onPointerDown={(e) => e.preventDefault()} // keep focus (and the iPad keyboard) on the input
-            onClick={() => insert(s)}
-            aria-label={`插入 ${s}`}
-          >
-            {s}
-          </button>
-        ))}
-      </div>
+      <button
+        type="button"
+        className="btn btn-small btn-ghost keypad-toggle"
+        onPointerDown={(e) => e.preventDefault()}
+        onClick={toggleMode}
+        aria-pressed={keypad}
+      >
+        {keypad ? '改用系統鍵盤（可打中文指令）' : '改用螢幕數字鍵盤'}
+      </button>
+
+      {keypad ? (
+        <NumericKeypad nextName={nextPointName(scene)} onKey={edit} />
+      ) : (
+        <div className="symbol-row" role="group" aria-label="插入符號">
+          {SYMBOLS.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className="btn btn-symbol"
+              onPointerDown={(e) => e.preventDefault()} // keep focus (and the iPad keyboard) on the input
+              onClick={() => insert(s)}
+              aria-label={`插入 ${s}`}
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
 
       <p id="quick-feedback" className={`feedback ${feedback ? (feedback.ok ? 'is-ok' : 'is-error') : ''}`} aria-live="polite">
         {feedback?.text ?? ''}
