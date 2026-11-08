@@ -58,6 +58,8 @@ export interface SolidObj extends BaseObj {
   vertexIds: string[];
   /** Each face lists indices into `vertexIds`, in boundary order. */
   faces: number[][];
+  /** Optional fill colour per face (same order as `faces`); null / missing = no fill. */
+  faceColors?: (string | null)[];
 }
 
 export type SceneObject = PointObj | VectorObj | SegmentObj | PlaneObj | SolidObj;
@@ -97,6 +99,8 @@ export const solids = (scene: Scene): SolidObj[] =>
 
 export const PLANE_PALETTE = ['#5b8def', '#e9a23b', '#4fb37a', '#b872d9'];
 export const SOLID_COLOR = '#1d232b';
+/** Colours offered by the colour pickers for planes and solid faces. */
+export const FILL_PALETTE = ['#5b8def', '#e9a23b', '#4fb37a', '#b872d9', '#e5534b', '#2bb3c0', '#f2c94c', '#8a94a3'];
 
 /** Resolves a list of point ids to positions; null if any point is missing. */
 export function pointPositions(scene: Scene, ids: string[]): Vec3[] | null {

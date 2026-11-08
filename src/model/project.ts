@@ -153,13 +153,20 @@ export function parseProject(text: string): ParseResult {
         (f) => Array.isArray(f) && f.length >= 3 && f.every((i) => Number.isInteger(i) && i >= 0 && i < n),
       );
       if (valid && faces.length >= 4) {
-        obj = {
+        const solid: SolidObj = {
           ...base,
           kind: 'solid',
           template: o.template as SolidTemplate,
           vertexIds: [...(o.vertexIds as string[])],
           faces: (faces as number[][]).map((f) => [...f]),
-        } satisfies SolidObj;
+        };
+        if (Array.isArray(o.faceColors) && o.faceColors.some((c) => isStr(c) && COLOR_RE.test(c))) {
+          solid.faceColors = faces.map((_, i) => {
+            const c = (o.faceColors as unknown[])[i];
+            return isStr(c) && COLOR_RE.test(c) ? c : null;
+          });
+        }
+        obj = solid;
       }
     }
     if (obj) {

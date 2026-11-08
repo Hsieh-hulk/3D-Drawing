@@ -200,6 +200,13 @@ export function projectToDrawing(scene: Scene, cam: ViewCamera, opts: ProjectOpt
     s.vertexIds.forEach((id) => vertexCentroid.has(id) || vertexCentroid.set(id, c2));
     if (!s.visible) continue;
     const selected = s.id === selectedId;
+    s.faces.forEach((f, fi) => {
+      const fill = s.faceColors?.[fi];
+      if (!fill) return;
+      const fp = f.map((i) => pos[i]);
+      const depth = fp.reduce((acc, p) => acc + dot(p, cam.forward), 0) / fp.length;
+      prims.push({ type: 'polygon', pts: fp.map(P), color: fill, opacity: selected ? 0.42 : 0.32, depth, objectId: s.id, selected });
+    });
     for (const [i, j] of solidEdges(s)) addSegment3(pos[i], pos[j], s.color, 'edge', { objectId: s.id, selected });
   }
 
