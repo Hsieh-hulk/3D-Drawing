@@ -34,6 +34,19 @@ export interface InteractionCallbacks {
   onDragMove(id: string, pos: Vec3): void;
   /** Tap on empty space in place mode. */
   onPlace(pos: Vec3): void;
+  /** Line tool: released a drag from one point onto another. */
+  onConnect(fromId: string, toId: string): void;
+  /** Face tool: tapped a point. */
+  onFaceVertex(id: string): void;
+}
+
+export type DrawTool = 'line' | 'face' | null;
+
+interface LinkState {
+  pointerId: number;
+  fromId: string;
+  cur: Pt2;
+  overId: string | null;
 }
 
 interface DragState {
@@ -71,6 +84,9 @@ export class SceneController {
   private selectedId: string | null = null;
   private view: ViewSettings | null = null;
   private placeMode = false;
+  private drawTool: DrawTool = null;
+  private faceDraft: string[] = [];
+  private link: LinkState | null = null;
 
   /**
    * Cached projection of the content (everything but axes and grid); rebuilt only when the camera
@@ -146,6 +162,14 @@ export class SceneController {
   setPlaceMode(on: boolean): void {
     this.placeMode = on;
     this.container.classList.toggle('is-placing', on);
+    this.dirty = true;
+  }
+
+  setDrawTool(tool: DrawTool, faceDraft: string[]): void {
+    this.drawTool = tool;
+    this.faceDraft = faceDraft;
+    if (!tool) this.link = null;
+    this.container.classList.toggle('is-drawing', tool !== null);
     this.dirty = true;
   }
 
@@ -228,7 +252,7 @@ export class SceneController {
     this.container.removeEventListener('pointercancel', this.onPointerCancel, { capture: true });
     this.container.removeEventListener('selectstart', preventDefault);
     this.container.removeEventListener('contextmenu', preventDefault);
-    this.container.classList.remove('is-placing', 'is-hovering');
+    this.container.classList.remove('is-placing', 'is-hovering', 'is-drawing');
     this.canvas.remove();
   }
 
@@ -283,6 +307,7 @@ export class SceneController {
 
   /** Screen geometry of the three axis handles of the selected point. */
   private handles(): { axis: 0 | 1 | 2; base: Pt2; knob: Pt2; pxPerUnit: Pt2 }[] {
+    if (this.drawTool) return []; // drawing tools never move points
     const sel = this.draggableSelected();
     if (!sel) return [];
     const cam = this.getViewCamera();
@@ -298,6 +323,19 @@ export class SceneController {
       out.push({ axis, base, knob: [base[0] + (v[0] / len) * HANDLE_LEN_PX, base[1] + (v[1] / len) * HANDLE_LEN_PX], pxPerUnit: v });
     }
     return out;
+  }
+
+  /** Screen position of a visible point, or null. */
+  private pointPx(id: string, t: PxTransform, cam: ViewCamera): Pt2 | null {
+    const p = findPoint(this.scene, id);
+    if (!p) return null;
+    return toPx(t, projectPoint(coordsValue(p.coords), cam));
+  }
+
+  private pointAt(x: number, y: number, touch: boolean): string | null {
+    if (!this.drawing) return null;
+    const hit = hitTest(this.drawing, this.transform(), x, y, touch ? 22 : 12);
+    return hit?.kind === 'point' ? hit.id : null;
   }
 
   /** Snap step: the chosen grid step, refined to the current tick step when zoomed in (0 = off). */
@@ -319,6 +357,31 @@ export class SceneController {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
     const [x, y] = this.local(e);
     const touch = e.pointerType !== 'mouse';
+
+    // Drawing tools: a point starts a connection (line) or is added to the face outline; anything else rotates.
+    if (this.drawTool) {
+      const id = this.pointAt(x, y, touch);
+      if (id && this.drawTool === 'line') {
+        e.stopPropagation();
+        e.preventDefault();
+        try {
+          this.container.setPointerCapture(e.pointerId);
+        } catch {
+          /* see startDrag */
+        }
+        this.link = { pointerId: e.pointerId, fromId: id, cur: [x, y], overId: null };
+        this.dirty = true;
+        return;
+      }
+      if (id && this.drawTool === 'face') {
+        e.stopPropagation();
+        e.preventDefault();
+        this.callbacks.onFaceVertex(id);
+        return;
+      }
+      this.tap = { pointerId: e.pointerId, x, y, multi: false };
+      return;
+    }
 
     // 1. Axis handle of the selected point.
     const handle = this.handles().find((h) => Math.hypot(h.knob[0] - x, h.knob[1] - y) <= (touch ? 24 : 14));
@@ -364,6 +427,16 @@ export class SceneController {
   }
 
   private onPointerMove = (e: PointerEvent): void => {
+    const l = this.link;
+    if (l && e.pointerId === l.pointerId) {
+      e.stopPropagation();
+      const [x, y] = this.local(e);
+      const over = this.pointAt(x, y, e.pointerType !== 'mouse');
+      l.cur = [x, y];
+      l.overId = over && over !== l.fromId ? over : null;
+      this.dirty = true;
+      return;
+    }
     const d = this.drag;
     if (!d || e.pointerId !== d.pointerId) {
       if (e.pointerType === 'mouse' && e.buttons === 0) this.updateHover(e);
@@ -401,6 +474,17 @@ export class SceneController {
 
   private onPointerUp = (e: PointerEvent): void => {
     this.activePointers.delete(e.pointerId);
+    const l = this.link;
+    if (l && e.pointerId === l.pointerId) {
+      e.stopPropagation();
+      if (this.container.hasPointerCapture(e.pointerId)) this.container.releasePointerCapture(e.pointerId);
+      this.link = null;
+      this.dirty = true;
+      const [x, y] = this.local(e);
+      const target = this.pointAt(x, y, e.pointerType !== 'mouse');
+      if (target && target !== l.fromId) this.callbacks.onConnect(l.fromId, target);
+      return;
+    }
     const d = this.drag;
     if (d && e.pointerId === d.pointerId) {
       e.stopPropagation();
@@ -420,11 +504,13 @@ export class SceneController {
   private onPointerCancel = (e: PointerEvent): void => {
     this.activePointers.delete(e.pointerId);
     if (this.drag?.pointerId === e.pointerId) this.drag = null;
+    if (this.link?.pointerId === e.pointerId) this.link = null;
     if (this.tap?.pointerId === e.pointerId) this.tap = null;
     this.dirty = true;
   };
 
   private handleTap(x: number, y: number, touch: boolean): void {
+    if (this.drawTool) return; // taps on empty space do nothing while drawing
     const hit = this.drawing ? hitTest(this.drawing, this.transform(), x, y, touch ? 22 : 12) : null;
     if (hit) {
       this.callbacks.onSelect(hit.id);
@@ -523,6 +609,7 @@ export class SceneController {
 
   /** Screen-only UI on top of the drawing (never exported): axis handles and the live coordinate readout. */
   private paintOverlay(ctx: CanvasRenderingContext2D): void {
+    this.paintToolOverlay(ctx);
     const handles = this.handles();
     for (const h of handles) {
       const color = AXIS_COLORS[AXIS_KEYS[h.axis]];
@@ -570,6 +657,73 @@ export class SceneController {
         ctx.textBaseline = 'middle';
         ctx.fillText(text, x + 8, y + 12.5);
       }
+    }
+  }
+
+  /** Live preview of the drawing tools: the line being dragged and the face being outlined. */
+  private paintToolOverlay(ctx: CanvasRenderingContext2D): void {
+    if (!this.drawTool) return;
+    const cam = this.getViewCamera();
+    const t = this.transform(cam);
+    const ring = (p: Pt2, color: string) => {
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], 9, 0, Math.PI * 2);
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = color;
+      ctx.stroke();
+    };
+    const accent = '#2f6fd6';
+
+    if (this.drawTool === 'line' && this.link) {
+      const from = this.pointPx(this.link.fromId, t, cam);
+      const to = this.link.overId ? this.pointPx(this.link.overId, t, cam) : this.link.cur;
+      if (from && to) {
+        ctx.beginPath();
+        ctx.moveTo(from[0], from[1]);
+        ctx.lineTo(to[0], to[1]);
+        ctx.setLineDash(this.link.overId ? [] : [6, 5]);
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = accent;
+        ctx.stroke();
+        ring(from, accent);
+        if (this.link.overId) ring(to, accent);
+      }
+    }
+
+    if (this.drawTool === 'face' && this.faceDraft.length > 0) {
+      const pts = this.faceDraft.map((id) => this.pointPx(id, t, cam)).filter((p): p is Pt2 => !!p);
+      if (pts.length >= 3) {
+        ctx.beginPath();
+        pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1])));
+        ctx.closePath();
+        ctx.globalAlpha = 0.15;
+        ctx.fillStyle = accent;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+      ctx.beginPath();
+      pts.forEach((p, i) => (i === 0 ? ctx.moveTo(p[0], p[1]) : ctx.lineTo(p[0], p[1])));
+      ctx.setLineDash([]);
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = accent;
+      ctx.stroke();
+      if (pts.length >= 3) {
+        ctx.beginPath();
+        ctx.moveTo(pts[pts.length - 1][0], pts[pts.length - 1][1]);
+        ctx.lineTo(pts[0][0], pts[0][1]);
+        ctx.setLineDash([6, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      pts.forEach((p, i) => {
+        ring(p, accent);
+        ctx.font = '600 11px system-ui, sans-serif';
+        ctx.fillStyle = accent;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(String(i + 1), p[0] + 13, p[1] - 13);
+      });
     }
   }
 

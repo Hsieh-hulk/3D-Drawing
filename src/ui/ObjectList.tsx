@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatNumber } from '../model/expr';
 import {
+  FILL_PALETTE,
   dependentsOf,
+  findPoint,
   objectName,
   planeLabel,
   planes,
@@ -13,8 +15,10 @@ import {
   vectorComponents,
   vectorLabel,
   vectors,
+  type PlaneObj,
   type PointObj,
   type SceneObject,
+  type SolidObj,
 } from '../model/scene';
 import { useAppStore, type ActionResult } from '../store/useAppStore';
 import { EyeIcon, EyeOffIcon, GuidesIcon, TrashIcon } from './icons';
@@ -199,6 +203,98 @@ function PointRow({ p }: { p: PointObj }) {
   );
 }
 
+/** Row of colour swatches plus a custom colour input; `allowNone` adds a "no fill" choice. */
+function ColorPicker(props: { value: string | null; label: string; allowNone?: boolean; onChange: (c: string | null) => void }) {
+  const { value, label, allowNone, onChange } = props;
+  const current = value?.toLowerCase() ?? null;
+  return (
+    <div className="color-picker" role="group" aria-label={label}>
+      {allowNone && (
+        <button
+          type="button"
+          className="color-chip color-chip--none"
+          aria-label="不填色"
+          aria-pressed={current === null}
+          title="不填色"
+          onClick={() => onChange(null)}
+        />
+      )}
+      {FILL_PALETTE.map((c) => (
+        <button
+          key={c}
+          type="button"
+          className="color-chip"
+          style={{ background: c }}
+          aria-label={`顏色 ${c}`}
+          aria-pressed={current === c}
+          onClick={() => onChange(c)}
+        />
+      ))}
+      <label className="color-chip color-chip--custom" title="自訂顏色">
+        <span className="visually-hidden">自訂顏色</span>
+        <input type="color" value={value ?? '#5b8def'} onChange={(e) => onChange(e.target.value)} />
+      </label>
+    </div>
+  );
+}
+
+function PlaneRow({ pl }: { pl: PlaneObj }) {
+  const scene = useAppStore((s) => s.scene);
+  const selected = useAppStore((s) => s.selectedId === pl.id);
+  const updateObject = useAppStore((s) => s.updateObject);
+  const label = planeLabel(scene, pl);
+  return (
+    <Row obj={pl}>
+      <div className="row-head">
+        <span className="swatch swatch--square" style={{ background: pl.color, opacity: 0.6 }} aria-hidden="true" />
+        <span className="obj-label">平面 {label}</span>
+        <RowActions obj={pl} />
+      </div>
+      {selected && <ColorPicker value={pl.color} label={`平面 ${label} 的顏色`} onChange={(c) => c && updateObject(pl.id, { color: c })} />}
+    </Row>
+  );
+}
+
+function SolidRow({ s }: { s: SolidObj }) {
+  const scene = useAppStore((st) => st.scene);
+  const selected = useAppStore((st) => st.selectedId === s.id);
+  const setSolidFaceColor = useAppStore((st) => st.setSolidFaceColor);
+  const colored = s.faceColors?.filter(Boolean).length ?? 0;
+  const faceName = (f: number[]) => f.map((i) => findPoint(scene, s.vertexIds[i])?.name ?? '?').join('');
+  const paintAll = (c: string | null) => setSolidFaceColor(s.id, 'all', c);
+  return (
+    <Row obj={s}>
+      <div className="row-head">
+        <span className="swatch swatch--square" style={{ background: s.color }} aria-hidden="true" />
+        <span className="obj-label">
+          {solidTitle(scene, s)}
+          {colored > 0 && <span className="obj-meta">　{colored} 面上色</span>}
+        </span>
+        <RowActions obj={s} />
+      </div>
+      {selected && (
+        <div className="face-colors">
+          <div className="face-color-row">
+            <span className="face-name">全部面</span>
+            <ColorPicker value={null} label="全部面的顏色" allowNone onChange={paintAll} />
+          </div>
+          {s.faces.map((f, i) => (
+            <div key={i} className="face-color-row">
+              <span className="face-name">面 {faceName(f)}</span>
+              <ColorPicker
+                value={s.faceColors?.[i] ?? null}
+                label={`面 ${faceName(f)} 的顏色`}
+                allowNone
+                onChange={(c) => setSolidFaceColor(s.id, i, c)}
+              />
+            </div>
+          ))}
+        </div>
+      )}
+    </Row>
+  );
+}
+
 function Section({ title, count, children }: { title: string; count: number; children: ReactNode }) {
   if (count === 0) return null;
   return (
@@ -233,25 +329,13 @@ export function ObjectList() {
     <>
       <Section title="幾何體" count={sols.length}>
         {sols.map((s) => (
-          <Row key={s.id} obj={s}>
-            <div className="row-head">
-              <span className="swatch swatch--square" style={{ background: s.color }} aria-hidden="true" />
-              <span className="obj-label">{solidTitle(scene, s)}</span>
-              <RowActions obj={s} />
-            </div>
-          </Row>
+          <SolidRow key={s.id} s={s} />
         ))}
       </Section>
 
       <Section title="平面" count={pls.length}>
         {pls.map((pl) => (
-          <Row key={pl.id} obj={pl}>
-            <div className="row-head">
-              <span className="swatch swatch--square" style={{ background: pl.color, opacity: 0.6 }} aria-hidden="true" />
-              <span className="obj-label">平面 {planeLabel(scene, pl)}</span>
-              <RowActions obj={pl} />
-            </div>
-          </Row>
+          <PlaneRow key={pl.id} pl={pl} />
         ))}
       </Section>
 
