@@ -4,8 +4,10 @@ import { formatNumber } from '../model/expr';
 import { coordsValue, findPoint, type Scene } from '../model/scene';
 import type { Vec3, ViewPreset, ViewSettings } from '../model/types';
 import { WORLD_UP, presetCameraPosition } from '../model/viewPresets';
-import { AXIS_COLORS, projectPoint, projectToDrawing } from '../projection/project';
-import type { Drawing, Pt2, ViewCamera } from '../projection/types';
+import { axisStep } from '../projection/axisScale';
+import { AXIS_COLORS, projectAutoAxes, projectPoint, projectToDrawing, sceneOccluders, type AxisWindow } from '../projection/project';
+import type { Bounds, Drawing, Prim, Pt2, ViewCamera } from '../projection/types';
+import type { OccluderSet } from '../projection/visibility';
 import { CanvasPainter } from '../render2d/canvasRenderer';
 import { DEFAULT_STYLE, paintDrawing, toPx, type PxTransform } from '../render2d/paint';
 import { axisDragDelta, choosePlaneAxis, hitTest, screenToDrawing, snapValue, solveOnPlane } from './interaction';
@@ -16,6 +18,12 @@ const EXPORT_PX_PER_UNIT = 60;
 const HANDLE_LEN_PX = 48;
 const TAP_SLOP_PX = 6;
 const DRAG_START_PX = 3;
+/** Zoom range of the interactive view (wide, Desmos-style: the axes rescale themselves). */
+const MIN_ZOOM = 0.02;
+const MAX_ZOOM = 500;
+/** Exports keep the zoom range they always had, so a far zoom never yields a tiny or huge file. */
+const EXPORT_MIN_ZOOM = 0.3;
+const EXPORT_MAX_ZOOM = 6;
 const AXIS_KEYS = ['x', 'y', 'z'] as const;
 const preventDefault = (e: Event) => e.preventDefault();
 
@@ -64,9 +72,15 @@ export class SceneController {
   private view: ViewSettings | null = null;
   private placeMode = false;
 
-  /** Cached projection; rebuilt only when the camera orientation or the content changes (not on pan/zoom). */
+  /**
+   * Cached projection of the content (everything but axes and grid); rebuilt only when the camera
+   * orientation, the content, or the zoom bucket that sizes infinite lines changes.
+   */
+  private content: { key: string; drawing: Drawing; occluders: OccluderSet } | null = null;
+  /** Auto axes + grid; they depend on the visible window, so they are rebuilt on pan/zoom (cheap). */
+  private axes: { key: string; prims: Prim[] } | null = null;
+  /** Content + axes, what is painted and hit-tested. */
   private drawing: Drawing | null = null;
-  private drawingKey = '';
   private contentVersion = 0;
 
   private readonly activePointers = new Set<number>();
@@ -90,8 +104,8 @@ export class SceneController {
     this.controls = new OrbitControls(this.camera, this.canvas);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.12;
-    this.controls.minZoom = 0.3;
-    this.controls.maxZoom = 6;
+    this.controls.minZoom = MIN_ZOOM;
+    this.controls.maxZoom = MAX_ZOOM;
     this.controls.zoomToCursor = true;
     this.controls.touches = { ONE: THREE.TOUCH.ROTATE, TWO: THREE.TOUCH.DOLLY_PAN };
     this.controls.addEventListener('start', () => {
@@ -171,7 +185,8 @@ export class SceneController {
    * exports at the same size from a phone, an iPad or a desktop window.
    */
   getExportContext(): { cam: ViewCamera; pxPerUnit: number } {
-    return { cam: this.getViewCamera(), pxPerUnit: EXPORT_PX_PER_UNIT * this.camera.zoom };
+    const zoom = Math.min(EXPORT_MAX_ZOOM, Math.max(EXPORT_MIN_ZOOM, this.camera.zoom));
+    return { cam: this.getViewCamera(), pxPerUnit: EXPORT_PX_PER_UNIT * zoom };
   }
 
   /**
@@ -234,6 +249,25 @@ export class SceneController {
     };
   }
 
+  /** Drawing-space rectangle currently on screen. */
+  private visibleRect(t: PxTransform = this.transform()): Bounds {
+    const hw = (this.width || 1) / 2 / t.scale;
+    const hh = (this.height || 1) / 2 / t.scale;
+    return { minX: t.origin[0] - hw, maxX: t.origin[0] + hw, minY: t.origin[1] - hh, maxY: t.origin[1] + hh };
+  }
+
+  /** World-space radius around the origin that covers the whole screen (at least axisRange). */
+  private viewRadius(t: PxTransform = this.transform()): number {
+    const r = this.visibleRect(t);
+    const corner = Math.max(Math.hypot(r.minX, r.minY), Math.hypot(r.maxX, r.minY), Math.hypot(r.minX, r.maxY), Math.hypot(r.maxX, r.maxY));
+    return Math.max(this.view?.axisRange ?? 5, corner);
+  }
+
+  /** Points may be dragged / placed this far from the origin (twice what is on screen). */
+  private coordLimit(): number {
+    return this.viewRadius() * 2;
+  }
+
   private local(e: PointerEvent): Pt2 {
     const r = this.container.getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top];
@@ -266,8 +300,11 @@ export class SceneController {
     return out;
   }
 
+  /** Snap step: the chosen grid step, refined to the current tick step when zoomed in (0 = off). */
   private snap(): number {
-    return this.view?.snap ?? 1;
+    const s = this.view?.snap ?? 1;
+    if (s === 0) return 0;
+    return Math.min(s, axisStep(this.getViewCamera(), this.pxPerUnit()));
   }
 
   // ---------------------------------------------------------------- pointer handling
@@ -355,7 +392,7 @@ export class SceneController {
       }
     }
     // Keep points inside a sane range so a wild drag cannot fling them out of view.
-    const limit = (this.view?.axisRange ?? 5) * 2;
+    const limit = this.coordLimit();
     for (let i = 0; i < 3; i++) next[i] = Math.max(-limit, Math.min(limit, next[i]));
     if (next.every((v, i) => v === d.lastPos[i])) return;
     d.lastPos = next;
@@ -397,7 +434,7 @@ export class SceneController {
       const cam = this.getViewCamera();
       const axis = choosePlaneAxis(cam);
       const pos = solveOnPlane(screenToDrawing(this.transform(cam), x, y), cam, axis, 0);
-      const limit = (this.view?.axisRange ?? 5) * 2;
+      const limit = this.coordLimit();
       if (pos && pos.every((v) => Math.abs(v) <= limit)) {
         this.callbacks.onPlace(pos.map((v) => snapValue(v, this.snap())) as unknown as Vec3);
         return;
@@ -451,10 +488,27 @@ export class SceneController {
   private render(): void {
     if (!this.view || this.width === 0) return;
     const cam = this.getViewCamera();
-    const key = `${this.contentVersion}|${cam.forward.map((v) => v.toFixed(6)).join(',')}|${cam.up.map((v) => v.toFixed(6)).join(',')}`;
-    if (key !== this.drawingKey || !this.drawing) {
-      this.drawing = projectToDrawing(this.scene, cam, { view: this.view, selectedId: this.selectedId });
-      this.drawingKey = key;
+    const t = this.transform(cam);
+    // Infinite lines are clipped to a cube sized by a power-of-two bucket of the visible radius, so the
+    // content is re-projected only when zooming crosses a doubling, not on every frame.
+    const lineExtent = Math.pow(2, Math.ceil(Math.log2(this.viewRadius(t) * 1.6)));
+    const camKey = `${cam.forward.map((v) => v.toFixed(6)).join(',')}|${cam.up.map((v) => v.toFixed(6)).join(',')}`;
+    const contentKey = `${this.contentVersion}|${camKey}|${lineExtent}`;
+    let rebuilt = false;
+    if (!this.content || this.content.key !== contentKey) {
+      const occluders = sceneOccluders(this.scene, cam);
+      const drawing = projectToDrawing(this.scene, cam, { view: this.view, selectedId: this.selectedId, axes: 'none', lineExtent, occluders });
+      this.content = { key: contentKey, drawing, occluders };
+      rebuilt = true;
+    }
+    const win: AxisWindow = { rect: this.visibleRect(t), pxPerUnit: t.scale };
+    const axesKey = `${contentKey}|${win.pxPerUnit}|${win.rect.minX},${win.rect.minY},${win.rect.maxX},${win.rect.maxY}`;
+    if (!this.axes || this.axes.key !== axesKey) {
+      this.axes = { key: axesKey, prims: projectAutoAxes(cam, this.view, this.content.occluders, win) };
+      rebuilt = true;
+    }
+    if (rebuilt || !this.drawing) {
+      this.drawing = { prims: [...this.axes.prims, ...this.content.drawing.prims], bounds: this.content.drawing.bounds };
     }
 
     const dpr = this.canvas.width / this.width;
@@ -463,7 +517,7 @@ export class SceneController {
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, this.width, this.height);
     const painter = new CanvasPainter(ctx);
-    paintDrawing(painter, this.drawing, this.transform(cam), { ...DEFAULT_STYLE, showHiddenLines: this.view.showHiddenLines });
+    paintDrawing(painter, this.drawing, t, { ...DEFAULT_STYLE, showHiddenLines: this.view.showHiddenLines });
     this.paintOverlay(ctx);
   }
 
