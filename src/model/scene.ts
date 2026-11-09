@@ -97,7 +97,18 @@ export const planes = (scene: Scene): PlaneObj[] =>
 export const solids = (scene: Scene): SolidObj[] =>
   scene.objects.filter((o): o is SolidObj => o.kind === 'solid');
 
-export const PLANE_PALETTE = ['#5b8def', '#e9a23b', '#4fb37a', '#b872d9'];
+export const PLANE_PALETTE = [
+  '#5b8def',
+  '#e9a23b',
+  '#4fb37a',
+  '#b872d9',
+  '#e5534b',
+  '#2bb3c0',
+  '#f2c94c',
+  '#ec6fa6',
+  '#8bc34a',
+  '#a8754b',
+];
 export const SOLID_COLOR = '#1d232b';
 /** Colours offered by the colour pickers for planes and solid faces. */
 export const FILL_PALETTE = ['#5b8def', '#e9a23b', '#4fb37a', '#b872d9', '#e5534b', '#2bb3c0', '#f2c94c', '#8a94a3'];
