@@ -18,7 +18,7 @@ const PRESET_DIRECTIONS: Record<ViewPreset, Vec3> = {
 };
 
 export const VIEW_PRESET_LABELS: Record<ViewPreset, string> = {
-  textbook: '課本視角',
+  textbook: '立體視圖',
   front: '前視圖',
   right: '右視圖',
   top: '俯視圖',

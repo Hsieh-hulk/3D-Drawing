@@ -146,7 +146,7 @@ export function projectToDrawing(scene: Scene, cam: ViewCamera, opts: ProjectOpt
     if (!pos) continue;
     const depth = pos.reduce((s, p) => s + dot(p, cam.forward), 0) / pos.length;
     const selected = pl.id === selectedId;
-    prims.push({ type: 'polygon', pts: pos.map(P), color: pl.color, opacity: selected ? 0.32 : 0.2, depth, objectId: pl.id, selected });
+    prims.push({ type: 'polygon', pts: pos.map(P), color: pl.color, opacity: selected ? 0.5 : 0.36, depth, objectId: pl.id, selected });
     pos.forEach((p, i) => addSegment3(p, pos[(i + 1) % pos.length], pl.color, 'plane-edge', { objectId: pl.id, selected }));
   }
 
@@ -205,7 +205,7 @@ export function projectToDrawing(scene: Scene, cam: ViewCamera, opts: ProjectOpt
       if (!fill) return;
       const fp = f.map((i) => pos[i]);
       const depth = fp.reduce((acc, p) => acc + dot(p, cam.forward), 0) / fp.length;
-      prims.push({ type: 'polygon', pts: fp.map(P), color: fill, opacity: selected ? 0.42 : 0.32, depth, objectId: s.id, selected });
+      prims.push({ type: 'polygon', pts: fp.map(P), color: fill, opacity: selected ? 0.6 : 0.48, depth, objectId: s.id, selected });
     });
     for (const [i, j] of solidEdges(s)) addSegment3(pos[i], pos[j], s.color, 'edge', { objectId: s.id, selected });
   }
