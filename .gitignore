@@ -4,3 +4,5 @@ dist
 .vite
 .claude
 tsconfig.tsbuildinfo
+
+graphify-out
