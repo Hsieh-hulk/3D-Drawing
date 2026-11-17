@@ -159,6 +159,10 @@ export class SceneController {
     this.dirty = true;
   }
 
+  setRotateSpeed(speed: number): void {
+    this.controls.rotateSpeed = speed;
+  }
+
   setPlaceMode(on: boolean): void {
     this.placeMode = on;
     this.container.classList.toggle('is-placing', on);

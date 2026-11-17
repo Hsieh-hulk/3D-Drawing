@@ -6,7 +6,29 @@ import type { ViewSettings } from '../model/types';
 
 const KEY = 'sv3d.autosave.v1';
 const EXPORT_KEY = 'sv3d.exportOptions.v1';
+const ROTATE_SPEED_KEY = 'sv3d.rotateSpeed.v1';
 const DEBOUNCE_MS = 400;
+
+/** Drag-to-rotate sensitivity (OrbitControls.rotateSpeed). 1 is the library default, which felt too fast. */
+export const ROTATE_SPEED_MIN = 0.1;
+export const ROTATE_SPEED_MAX = 1;
+export const ROTATE_SPEED_STEP = 0.1;
+export const ROTATE_SPEED_DEFAULT = 0.5;
+
+export function clampRotateSpeed(v: number): number {
+  return Math.min(ROTATE_SPEED_MAX, Math.max(ROTATE_SPEED_MIN, Math.round(v * 10) / 10));
+}
+
+/** Last chosen rotate sensitivity, or the default when nothing valid is stored. */
+export function loadRotateSpeed(): number {
+  try {
+    const raw = globalThis.localStorage?.getItem(ROTATE_SPEED_KEY);
+    const n = raw === null || raw === undefined ? NaN : Number(raw);
+    return Number.isFinite(n) ? clampRotateSpeed(n) : ROTATE_SPEED_DEFAULT;
+  } catch {
+    return ROTATE_SPEED_DEFAULT;
+  }
+}
 
 interface Saved {
   scene: Scene;
@@ -52,6 +74,7 @@ interface PersistedSlice {
   scene: Scene;
   view: ViewSettings;
   exportOptions: ExportOptions;
+  rotateSpeed: number;
 }
 
 /** Saves the scene/view/export options shortly after they change. Failures (quota, private mode) are ignored. */
@@ -60,13 +83,20 @@ export function startAutosave<T extends PersistedSlice>(store: StoreApi<T>): voi
   let timer: ReturnType<typeof setTimeout> | undefined;
   let last: PersistedSlice = store.getState();
   store.subscribe((s) => {
-    if (s.scene === last.scene && s.view === last.view && s.exportOptions === last.exportOptions) return;
+    if (
+      s.scene === last.scene &&
+      s.view === last.view &&
+      s.exportOptions === last.exportOptions &&
+      s.rotateSpeed === last.rotateSpeed
+    )
+      return;
     last = s;
     clearTimeout(timer);
     timer = setTimeout(() => {
       try {
         localStorage.setItem(KEY, serializeProject(s.scene, s.view));
         localStorage.setItem(EXPORT_KEY, JSON.stringify(s.exportOptions));
+        localStorage.setItem(ROTATE_SPEED_KEY, String(s.rotateSpeed));
       } catch {
         /* storage full or blocked: autosave is a convenience, never an error */
       }

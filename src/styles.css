@@ -856,6 +856,35 @@ body {
   color: var(--text-muted);
 }
 
+.rotate-speed-step {
+  min-width: var(--tap);
+  padding: 0 10px;
+  border-right: 0;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.rotate-speed-step:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.rotate-speed-input {
+  width: 110px;
+  margin: 0 2px;
+  /* The toolbar scrolls sideways: keep a horizontal slider drag from being taken as a scroll. */
+  touch-action: none;
+  cursor: pointer;
+}
+
+.rotate-speed-value {
+  min-width: 2.4em;
+  padding-right: 10px;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+}
+
 .panel-actions {
   display: flex;
   gap: 2px;

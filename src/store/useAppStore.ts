@@ -19,7 +19,7 @@ import {
 } from '../model/scene';
 import { createSolid } from '../model/solids';
 import type { Vec3, ViewPreset, ViewSettings } from '../model/types';
-import { loadAutosave, startAutosave } from './persistence';
+import { clampRotateSpeed, loadAutosave, loadRotateSpeed, startAutosave } from './persistence';
 
 /** Drawing tools in the 3D view: drag point→point to connect, or tap points to outline a face. */
 export type DrawTool = 'line' | 'face' | null;
@@ -65,6 +65,9 @@ interface AppState {
   togglePointCoords: () => void;
   toggleHiddenLines: () => void;
   setSnap: (snap: ViewSettings['snap']) => void;
+  /** Drag-to-rotate sensitivity of the 3D view (a user preference, not part of the project file). */
+  rotateSpeed: number;
+  setRotateSpeed: (speed: number) => void;
   togglePlaceMode: () => void;
   setDrawTool: (tool: DrawTool) => void;
   /** Line tool: connects two existing points with a segment. */
@@ -120,6 +123,7 @@ export const useAppStore = create<AppState>((set, get) => {
   return {
     view: { ...DEFAULT_VIEW, ...saved?.view },
     viewRequestId: 0,
+    rotateSpeed: loadRotateSpeed(),
     scene: saved?.scene ?? EMPTY_SCENE,
     selectedId: null,
     placeMode: false,
@@ -148,6 +152,7 @@ export const useAppStore = create<AppState>((set, get) => {
     togglePointCoords: () => set((s) => ({ view: { ...s.view, showPointCoords: !s.view.showPointCoords } })),
     toggleHiddenLines: () => set((s) => ({ view: { ...s.view, showHiddenLines: !s.view.showHiddenLines } })),
     setSnap: (snap) => set((s) => ({ view: { ...s.view, snap } })),
+    setRotateSpeed: (speed) => set({ rotateSpeed: clampRotateSpeed(speed) }),
     togglePlaceMode: () => set((s) => ({ placeMode: !s.placeMode, drawTool: null, faceDraft: [], toolMessage: null })),
 
     setDrawTool: (tool) =>

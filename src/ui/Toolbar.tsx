@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import type { ViewPreset, ViewSettings } from '../model/types';
 import { VIEW_PRESET_LABELS } from '../model/viewPresets';
+import { ROTATE_SPEED_MAX, ROTATE_SPEED_MIN, ROTATE_SPEED_STEP } from '../store/persistence';
 import { useAppStore } from '../store/useAppStore';
 import { ExportDialog } from './ExportDialog';
 import { RedoIcon, UndoIcon } from './icons';
@@ -23,6 +24,9 @@ export function Toolbar() {
   const togglePointCoords = useAppStore((s) => s.togglePointCoords);
   const toggleHiddenLines = useAppStore((s) => s.toggleHiddenLines);
   const setSnap = useAppStore((s) => s.setSnap);
+  const placeMode = useAppStore((s) => s.placeMode);
+  const rotateSpeed = useAppStore((s) => s.rotateSpeed);
+  const setRotateSpeed = useAppStore((s) => s.setRotateSpeed);
   const canUndo = useAppStore((s) => s.past.length > 0);
   const canRedo = useAppStore((s) => s.future.length > 0);
   const undo = useAppStore((s) => s.undo);
@@ -68,23 +72,61 @@ export function Toolbar() {
             虛線
           </button>
         </div>
-        <div className="segmented segmented--labelled" role="group" aria-label="拖曳吸附">
-          <span className="segmented-label" aria-hidden="true">
-            吸附
-          </span>
-          {SNAPS.map((s) => (
-            <button
-              key={s.value}
-              type="button"
-              className="btn"
-              aria-pressed={view.snap === s.value}
-              aria-label={s.value === 0 ? '不吸附' : `吸附到 ${s.label}`}
-              onClick={() => setSnap(s.value)}
-            >
-              {s.label}
-            </button>
-          ))}
+        <div className="segmented segmented--labelled rotate-speed" role="group" aria-label="旋轉靈敏度">
+          <label className="segmented-label" htmlFor="rotate-speed">
+            旋轉靈敏度
+          </label>
+          <button
+            type="button"
+            className="btn rotate-speed-step"
+            aria-label="降低旋轉靈敏度"
+            disabled={rotateSpeed <= ROTATE_SPEED_MIN}
+            onClick={() => setRotateSpeed(rotateSpeed - ROTATE_SPEED_STEP)}
+          >
+            −
+          </button>
+          <input
+            id="rotate-speed"
+            className="rotate-speed-input"
+            type="range"
+            min={ROTATE_SPEED_MIN}
+            max={ROTATE_SPEED_MAX}
+            step={ROTATE_SPEED_STEP}
+            value={rotateSpeed}
+            onChange={(e) => setRotateSpeed(Number(e.target.value))}
+          />
+          <button
+            type="button"
+            className="btn rotate-speed-step"
+            aria-label="提高旋轉靈敏度"
+            disabled={rotateSpeed >= ROTATE_SPEED_MAX}
+            onClick={() => setRotateSpeed(rotateSpeed + ROTATE_SPEED_STEP)}
+          >
+            +
+          </button>
+          <output className="rotate-speed-value" htmlFor="rotate-speed">
+            {rotateSpeed.toFixed(1)}
+          </output>
         </div>
+        {placeMode && (
+          <div className="segmented segmented--labelled" role="group" aria-label="拖曳吸附">
+            <span className="segmented-label" aria-hidden="true">
+              吸附
+            </span>
+            {SNAPS.map((s) => (
+              <button
+                key={s.value}
+                type="button"
+                className="btn"
+                aria-pressed={view.snap === s.value}
+                aria-label={s.value === 0 ? '不吸附' : `吸附到 ${s.label}`}
+                onClick={() => setSnap(s.value)}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <button ref={exportBtnRef} type="button" className="btn btn-primary toolbar-export" onClick={() => setExportOpen(true)}>
         匯出
