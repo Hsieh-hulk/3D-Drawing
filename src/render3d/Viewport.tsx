@@ -7,6 +7,7 @@ export function Viewport() {
   const containerRef = useRef<HTMLDivElement>(null);
   const controllerRef = useRef<SceneController | null>(null);
   const view = useAppStore((s) => s.view);
+  const rotateSpeed = useAppStore((s) => s.rotateSpeed);
   const viewRequestId = useAppStore((s) => s.viewRequestId);
   const scene = useAppStore((s) => s.scene);
   const selectedId = useAppStore((s) => s.selectedId);
@@ -38,6 +39,7 @@ export function Viewport() {
     controller.syncScene(state.scene, state.selectedId);
     controller.setPlaceMode(state.placeMode);
     controller.setDrawTool(state.drawTool, state.faceDraft);
+    controller.setRotateSpeed(state.rotateSpeed);
     controller.goToPreset(state.view.preset, false);
     return () => {
       controller.dispose();
@@ -49,6 +51,10 @@ export function Viewport() {
   useEffect(() => {
     controllerRef.current?.applySettings(view);
   }, [view]);
+
+  useEffect(() => {
+    controllerRef.current?.setRotateSpeed(rotateSpeed);
+  }, [rotateSpeed]);
 
   useEffect(() => {
     controllerRef.current?.syncScene(scene, selectedId);
