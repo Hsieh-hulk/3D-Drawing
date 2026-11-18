@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { evaluate, formatNumber, prettyExpr, splitTopLevel, toExactText } from '../src/model/expr';
+import { compileExpr, evaluate, formatNumber, parseEquation, prettyExpr, splitTopLevel, toExactText } from '../src/model/expr';
 
 function value(src: string): number {
   const r = evaluate(src);
@@ -81,6 +81,68 @@ describe('evaluate', () => {
     expect(evaluate('alert(1)').ok).toBe(false);
     expect(evaluate('constructor').ok).toBe(false);
     expect(evaluate('__proto__').ok).toBe(false);
+  });
+});
+
+describe('compileExpr', () => {
+  const fn = (src: string) => {
+    const r = compileExpr(src);
+    if (!r.ok) throw new Error(`expected ok for "${src}", got: ${r.error}`);
+    return r.fn;
+  };
+
+  it('evaluates variables with implicit multiplication', () => {
+    expect(fn('x^2')(3, 0)).toBe(9);
+    expect(fn('2x+1')(2, 0)).toBe(5);
+    expect(fn('xy')(2, 3)).toBe(6);
+    expect(fn('-x^2')(3, 0)).toBe(-9);
+  });
+
+  it('uses radians and splits glued function names', () => {
+    expect(fn('sin(x)')(Math.PI / 2, 0)).toBeCloseTo(1);
+    expect(fn('xsin(x)')(Math.PI / 2, 0)).toBeCloseTo(Math.PI / 2);
+    expect(fn('ln(x)')(Math.E, 0)).toBeCloseTo(1);
+    expect(fn('exp(x)')(0, 0)).toBe(1);
+  });
+
+  it('returns non-finite values instead of throwing', () => {
+    expect(fn('1/x')(0, 0)).toBe(Infinity);
+    expect(fn('sqrt(x)')(-1, 0)).toBeNaN();
+  });
+
+  it('keeps coordinate input in degrees', () => {
+    expect(evaluate('asin(1/2)').ok && evaluate('asin(1/2)')).toMatchObject({ value: expect.closeTo(30) });
+  });
+});
+
+describe('parseEquation', () => {
+  it.each([
+    ['y = x^2', 'y', 2, 4, false],
+    ['x = y^2', 'x', 2, 4, false],
+    ['x^2 = y', 'y', 3, 9, false],
+    ['x = 3', 'x', 7, 3, true],
+    ['Y = -1', 'y', 5, -1, true],
+    ['ｙ＝２ｘ', 'y', 2, 4, false],
+  ] as const)('parses %s', (src, solveFor, t, expected, constant) => {
+    const r = parseEquation(src);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.solveFor).toBe(solveFor);
+    expect(r.fn(t)).toBeCloseTo(expected);
+    expect(r.constant).toBe(constant);
+  });
+
+  it.each([
+    ['', '請輸入方程式'],
+    ['x^2', '需要一個'],
+    ['y = x = 1', '只能有一個'],
+    ['x^2 + y^2 = 4', '目前只支援'],
+    ['y = y + 1', '目前只支援'],
+    ['y = z', '不認得'],
+  ])('rejects %j', (src, msg) => {
+    const r = parseEquation(src);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain(msg);
   });
 });
 

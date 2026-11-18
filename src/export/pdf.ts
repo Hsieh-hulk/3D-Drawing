@@ -80,11 +80,13 @@ export class PdfPainter implements Painter {
     this.ops.push(`q ${this.gs(s.alpha)}${f(r)} ${f(g)} ${f(bl)} RG ${f(s.width)} w 1 J 1 j ${dash} ${f(a[0])} ${f(a[1])} m ${f(b[0])} ${f(b[1])} l S Q`);
   }
 
-  polygon(pts: Pt2[], color: string, alpha: number): void {
-    if (pts.length < 3) return;
+  polygon(pts: Pt2[], color: string, alpha: number, more: Pt2[][] = []): void {
+    const rings = [pts, ...more].filter((ring) => ring.length >= 3);
+    if (rings.length === 0) return;
     const [r, g, b] = parseColor(color);
-    const path = pts.map((p, i) => `${f(p[0])} ${f(p[1])} ${i === 0 ? 'm' : 'l'}`).join(' ');
-    this.ops.push(`q ${this.gs(alpha)}${f(r)} ${f(g)} ${f(b)} rg ${path} h f Q`);
+    // `f` fills with the non-zero winding rule, so rings of one orientation merge into a single shape.
+    const path = rings.map((ring) => ring.map((p, i) => `${f(p[0])} ${f(p[1])} ${i === 0 ? 'm' : 'l'}`).join(' ') + ' h').join(' ');
+    this.ops.push(`q ${this.gs(alpha)}${f(r)} ${f(g)} ${f(b)} rg ${path} f Q`);
   }
 
   circle(c: Pt2, rad: number, fill: string | null, stroke: { color: string; width: number } | null, alpha: number): void {

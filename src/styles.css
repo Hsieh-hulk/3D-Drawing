@@ -617,6 +617,20 @@ body {
   font-size: 18px;
 }
 
+.eq-field {
+  flex: 1;
+  min-width: 0;
+  font-family: 'Times New Roman', serif;
+  font-style: italic;
+  font-size: 17px;
+}
+
+.eq-extend {
+  min-height: 32px;
+  margin-top: 2px;
+  font-size: 14px;
+}
+
 .obj-label {
   flex: 1;
   min-width: 0;

@@ -48,6 +48,71 @@ function sampleScene(): Scene {
 
 const opts = (patch: Partial<ExportOptions> = {}): ExportOptions => ({ ...DEFAULT_EXPORT_OPTIONS, ...patch });
 
+describe('export with equations', () => {
+  function equationScene(): Scene {
+    let s: Scene = EMPTY_SCENE;
+    for (const cmd of ['y = x^2', 'x = 3', 'y = sin(x)']) {
+      const x = runCommand(cmd, s);
+      if (!x.ok) throw new Error(x.error);
+      s = x.scene;
+    }
+    // Extend the first two to 3D; leave the sine as a plain curve.
+    let n = 0;
+    return { objects: s.objects.map((o) => (o.kind === 'equation' && n++ < 2 ? { ...o, extend3d: true } : o)) };
+  }
+
+  it('draws extended surfaces and curves into SVG and PDF without invalid numbers', () => {
+    const frame = buildExportFrame(equationScene(), cam, view, opts(), 60, measure);
+    const polys = frame.drawing.prims.filter((p) => p.type === 'polygon');
+    expect(polys.length).toBeGreaterThan(1);
+    const svg = frameToSvg(frame, measure, '#ffffff');
+    expect(svg).not.toMatch(/NaN|Infinity/);
+    expect(svg).toContain('fill-rule="nonzero"'); // the curved surface is one merged path
+    const pdf = frameToPdf(frame, measure, '#ffffff');
+    expect(pdf).not.toMatch(/NaN|Infinity/);
+    expect(pdf.startsWith('%PDF')).toBe(true);
+  });
+
+  it('does not shrink the fitted axis range below the full box when an equation is visible', () => {
+    const s = equationScene();
+    expect(fittedAxisRange(s, 5)).toBe(5);
+    const hidden = { objects: s.objects.map((o) => ({ ...o, visible: false })) };
+    expect(fittedAxisRange(hidden, 5)).toBe(2);
+  });
+
+  it('merges a surface into one fill whose rings share one orientation (no seams, no double blending)', () => {
+    const frame = buildExportFrame(equationScene(), cam, view, opts(), 60, measure);
+    const polys = frame.drawing.prims.filter((p) => p.type === 'polygon');
+    // Two extended equations → exactly two polygons, however many quads each has.
+    expect(polys).toHaveLength(2);
+    const curved = polys.find((p) => p.type === 'polygon' && (p.more?.length ?? 0) > 0);
+    expect(curved).toBeDefined();
+    if (curved?.type !== 'polygon') return;
+    const area = (ring: [number, number][]) =>
+      ring.reduce((a, [x0, y0], i) => a + (x0 * ring[(i + 1) % ring.length][1] - ring[(i + 1) % ring.length][0] * y0), 0) / 2;
+    for (const ring of [curved.pts, ...(curved.more ?? [])]) expect(area(ring)).toBeGreaterThan(0);
+  });
+
+  it('keeps extended surfaces inside the axis box (±axisRange)', () => {
+    const frame = buildExportFrame(equationScene(), cam, view, opts(), 60, measure);
+    const R = view.axisRange;
+    // Project the box corners; every surface polygon vertex must lie within the box's screen bounds.
+    const corners = [-R, R].flatMap((x) => [-R, R].flatMap((y) => [-R, R].map((z) => [x, y, z] as const)));
+    const proj = corners.map(([x, y, z]) => [x * cam.right[0] + y * cam.right[1] + z * cam.right[2], x * cam.up[0] + y * cam.up[1] + z * cam.up[2]]);
+    const [minX, maxX] = [Math.min(...proj.map((p) => p[0])), Math.max(...proj.map((p) => p[0]))];
+    const [minY, maxY] = [Math.min(...proj.map((p) => p[1])), Math.max(...proj.map((p) => p[1]))];
+    for (const p of frame.drawing.prims) {
+      if (p.type !== 'polygon') continue;
+      for (const [x, y] of [p.pts, ...(p.more ?? [])].flat()) {
+        expect(x).toBeGreaterThanOrEqual(minX - 1e-6);
+        expect(x).toBeLessThanOrEqual(maxX + 1e-6);
+        expect(y).toBeGreaterThanOrEqual(minY - 1e-6);
+        expect(y).toBeLessThanOrEqual(maxY + 1e-6);
+      }
+    }
+  });
+});
+
 describe('export frame', () => {
   it('crops the page to the painted content plus a 16px margin', () => {
     const frame = buildExportFrame(sampleScene(), cam, view, opts(), 60, measure);

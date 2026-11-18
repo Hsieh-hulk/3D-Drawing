@@ -3,6 +3,7 @@ import { formatNumber } from '../model/expr';
 import {
   FILL_PALETTE,
   dependentsOf,
+  equations,
   findPoint,
   objectName,
   planeLabel,
@@ -15,6 +16,7 @@ import {
   vectorComponents,
   vectorLabel,
   vectors,
+  type EquationObj,
   type PlaneObj,
   type PointObj,
   type SceneObject,
@@ -255,6 +257,43 @@ function PlaneRow({ pl }: { pl: PlaneObj }) {
   );
 }
 
+function EquationRow({ eq }: { eq: EquationObj }) {
+  const selected = useAppStore((s) => s.selectedId === eq.id);
+  const updateObject = useAppStore((s) => s.updateObject);
+  const updateEquationSource = useAppStore((s) => s.updateEquationSource);
+  const setEquationExtend = useAppStore((s) => s.setEquationExtend);
+  const [error, setError] = useState('');
+  return (
+    <Row obj={eq}>
+      <div className="row-head">
+        <span
+          className={`swatch${eq.extend3d ? ' swatch--square' : ''}`}
+          style={{ background: eq.color, opacity: eq.extend3d ? 0.6 : 1 }}
+          aria-hidden="true"
+        />
+        <CommitField
+          className="eq-field"
+          value={eq.source}
+          label={`方程式 ${eq.source}`}
+          onCommit={(v) => updateEquationSource(eq.id, v)}
+          onError={setError}
+        />
+        <RowActions obj={eq} />
+      </div>
+      <label className="ex-check eq-extend">
+        <input type="checkbox" checked={eq.extend3d} onChange={(e) => setEquationExtend(eq.id, e.target.checked)} />
+        延伸到 3D
+      </label>
+      {error && (
+        <p className="feedback is-error" role="alert">
+          {error}
+        </p>
+      )}
+      {selected && <ColorPicker value={eq.color} label={`方程式 ${eq.source} 的顏色`} onChange={(c) => c && updateObject(eq.id, { color: c })} />}
+    </Row>
+  );
+}
+
 function SolidRow({ s }: { s: SolidObj }) {
   const scene = useAppStore((st) => st.scene);
   const selected = useAppStore((st) => st.selectedId === s.id);
@@ -315,6 +354,7 @@ export function ObjectList() {
   const segs = segments(scene);
   const sols = solids(scene);
   const pls = planes(scene);
+  const eqs = equations(scene);
 
   if (scene.objects.length === 0) {
     return (
@@ -327,6 +367,12 @@ export function ObjectList() {
 
   return (
     <>
+      <Section title="方程式" count={eqs.length}>
+        {eqs.map((eq) => (
+          <EquationRow key={eq.id} eq={eq} />
+        ))}
+      </Section>
+
       <Section title="幾何體" count={sols.length}>
         {sols.map((s) => (
           <SolidRow key={s.id} s={s} />

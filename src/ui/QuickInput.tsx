@@ -91,7 +91,7 @@ export function QuickInput() {
           className="field quick-field"
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="例如 A(1, 2, 3) 或 AB"
+          placeholder="例如 A(1, 2, 3)、AB 或 y = x^2"
           aria-label="輸入點、向量或線段"
           aria-invalid={feedback?.ok === false}
           aria-describedby="quick-feedback"

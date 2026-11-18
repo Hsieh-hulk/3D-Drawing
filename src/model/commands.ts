@@ -1,4 +1,4 @@
-import { evaluate, normalizeInput, splitTopLevel } from './expr';
+import { evaluate, normalizeInput, parseEquation, splitTopLevel } from './expr';
 import type { Vec3 } from './types';
 import { cross, dot, length, scale, sub } from './vec3';
 import {
@@ -6,6 +6,7 @@ import {
   POINT_COLOR,
   SEGMENT_COLOR,
   coordsValue,
+  equations,
   newId,
   planes,
   nextPointName,
@@ -27,6 +28,7 @@ import {
  *   線段 AB  /  seg AB                             → segment AB
  *   直線 AB  /  line AB                            → infinite line through A and B
  *   平面 ABC  /  平面 ABCD                         → translucent plane polygon through ≥3 coplanar points
+ *   y = x^2  /  x = 3  /  x = sin(y)              → 2D equation (curve on the xy-plane, can extend to 3D)
  */
 export type CommandResult = { ok: true; scene: Scene; message: string } | { ok: false; error: string };
 
@@ -38,6 +40,8 @@ const SEGMENT_RE = new RegExp(`^(線段|直線|segment|seg|line)\\s*(${NAME})\\s
 const VECTOR_RE = new RegExp(`^(?:向量|vector|vec)?\\s*(${NAME})\\s*(${NAME})$`);
 const PLANE_RE = new RegExp(`^(平面|plane)\\s*((?:${NAME}\\s*){3,})$`);
 const NAME_G = new RegExp(NAME, 'g');
+/** Looks like a 2D equation: one side is exactly x or y (case-insensitive, as students type X too). */
+const EQUATION_RE = /^[xy]\s*=|=\s*[xy]$/i;
 
 const AXIS_NAMES = ['x', 'y', 'z'];
 
@@ -62,10 +66,14 @@ export function runCommand(input: string, scene: Scene): CommandResult {
   const text = normalizeInput(input).trim();
   if (!text) return { ok: false, error: '請輸入內容，例如 A(1, 2, 3)' };
 
+  const looksLikeEquation = EQUATION_RE.test(text);
+
   let m = COMP_VECTOR_RE.exec(text);
   if (m) {
     const [, name, body] = m;
     const parsed = parseCoords(body);
+    // "y = (x + 1)" is an equation, not a vector named y; a real vector always has 3 components.
+    if (!parsed.ok && looksLikeEquation && splitTopLevel(body).length !== 3) return addEquation(scene, text);
     if (!parsed.ok) return parsed;
     const existing = vectorByName(scene, name);
     if (existing) {
@@ -99,6 +107,10 @@ export function runCommand(input: string, scene: Scene): CommandResult {
       },
     };
   }
+
+  // A point may legitimately be named X or Y ("X = (1, 2, 3)"); valid coordinates win over the equation reading.
+  const pointBody = POINT_RE.exec(text)?.[2];
+  if (looksLikeEquation && !(pointBody !== undefined && parseCoords(pointBody).ok)) return addEquation(scene, text);
 
   m = POINT_RE.exec(text);
   if (m) {
@@ -147,9 +159,35 @@ export function runCommand(input: string, scene: Scene): CommandResult {
   m = VECTOR_RE.exec(text);
   if (m) return addPointVector(scene, m[1], m[2]);
 
+  // Anything else with "=" and a bare x or y is an attempted equation (e.g. x^2 + y^2 = 4): say what is supported.
+  if (/=/.test(text) && /(^|[^a-z])[xy]([^a-z]|$)/i.test(text)) return addEquation(scene, text);
+
   return {
     ok: false,
-    error: '看不懂這個輸入。可以試試：A(1, 2, 3)、u = (1, -1, 2)、AB、線段 BC',
+    error: '看不懂這個輸入。可以試試：A(1, 2, 3)、u = (1, -1, 2)、AB、線段 BC、y = x^2',
+  };
+}
+
+export function addEquation(scene: Scene, source: string): CommandResult {
+  const text = normalizeInput(source).trim();
+  const eq = parseEquation(text);
+  if (!eq.ok) return eq;
+  return {
+    ok: true,
+    message: `已新增方程式 ${text}`,
+    scene: {
+      objects: [
+        ...scene.objects,
+        {
+          id: newId('eq'),
+          kind: 'equation',
+          source: text,
+          extend3d: false,
+          color: PLANE_PALETTE[equations(scene).length % PLANE_PALETTE.length],
+          visible: true,
+        },
+      ],
+    },
   };
 }
 

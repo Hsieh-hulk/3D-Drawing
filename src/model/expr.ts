@@ -6,8 +6,12 @@
  *   term    := unary (('*' | '/') unary | <implicit> power)*
  *   unary   := ('-' | '+') unary | power
  *   power   := primary ('^' unary)?
- *   primary := number | 'pi' | 'π' | 'e' | func '(' expr ')' | '√' primary | '(' expr ')'
- *   func    := sqrt | sin | cos | tan | abs   (trig functions take degrees, as in high-school problems)
+ *   primary := number | 'pi' | 'π' | 'e' | var | func '(' expr ')' | '√' primary | '(' expr ')'
+ *   func    := sqrt | abs | ln | log | exp | sin | cos | tan | asin | acos | atan
+ *   var     := x | y   (only in compileExpr / parseEquation)
+ *
+ * evaluate() (coordinate input) takes trig in degrees, as in high-school problems;
+ * compileExpr() / parseEquation() (graphs) take radians, like Desmos.
  */
 
 export type ExprResult = { ok: true; value: number } | { ok: false; error: string };
@@ -57,19 +61,90 @@ function tokenize(src: string): Token[] {
 
 const CONSTANTS: Record<string, number> = { pi: Math.PI, π: Math.PI, e: Math.E };
 const DEG = Math.PI / 180;
-const FUNCS: Record<string, (x: number) => number> = {
+/** Functions shared by both angle modes. */
+const BASE_FUNCS: Record<string, (x: number) => number> = {
   sqrt: Math.sqrt,
   abs: Math.abs,
+  ln: Math.log,
+  log: Math.log10,
+  exp: Math.exp,
+};
+/** Coordinate input: trig in degrees, as in high-school problems. */
+const DEG_FUNCS: Record<string, (x: number) => number> = {
+  ...BASE_FUNCS,
   sin: (x) => Math.sin(x * DEG),
   cos: (x) => Math.cos(x * DEG),
   tan: (x) => Math.tan(x * DEG),
+  asin: (x) => Math.asin(x) / DEG,
+  acos: (x) => Math.acos(x) / DEG,
+  atan: (x) => Math.atan(x) / DEG,
 };
+/** Equations such as y = sin(x): x is a length, so trig takes radians (like Desmos). */
+const RAD_FUNCS: Record<string, (x: number) => number> = {
+  ...BASE_FUNCS,
+  sin: Math.sin,
+  cos: Math.cos,
+  tan: Math.tan,
+  asin: Math.asin,
+  acos: Math.acos,
+  atan: Math.atan,
+};
+
+/** Compiled expression; unused variables are simply ignored. */
+export type CompiledFn = (x: number, y: number) => number;
+type Var = 'x' | 'y';
+
+interface ParseOptions {
+  vars: readonly Var[];
+  funcs: Record<string, (x: number) => number>;
+  /** true: throw on 1/0 and √(negative) (coordinate input); false: return ±Infinity / NaN (graph sampling). */
+  strict: boolean;
+}
+
+const STRICT_OPTS: ParseOptions = { vars: [], funcs: DEG_FUNCS, strict: true };
+
+/**
+ * With variables allowed, students write `2x`, `xsin(x)` or `sinx`; the tokenizer reads letters greedily,
+ * so split each unknown identifier into known names (longest match first). Unknown parts stay as-is and
+ * produce the usual "不認得" error.
+ */
+function splitIdentifiers(tokens: Token[], opts: ParseOptions): Token[] {
+  if (opts.vars.length === 0) return tokens;
+  const known = [...Object.keys(opts.funcs), ...Object.keys(CONSTANTS), ...opts.vars].sort((a, b) => b.length - a.length);
+  const isKnown = (s: string) => Object.hasOwn(opts.funcs, s) || Object.hasOwn(CONSTANTS, s) || (opts.vars as readonly string[]).includes(s);
+  const out: Token[] = [];
+  for (const tk of tokens) {
+    if (tk.t !== 'id' || isKnown(tk.v)) {
+      out.push(tk);
+      continue;
+    }
+    let rest = tk.v;
+    const parts: string[] = [];
+    while (rest) {
+      const name = known.find((k) => rest.startsWith(k));
+      if (!name) {
+        parts.length = 0;
+        break;
+      }
+      parts.push(name);
+      rest = rest.slice(name.length);
+    }
+    if (parts.length === 0) out.push(tk);
+    else parts.forEach((v) => out.push({ t: 'id', v }));
+  }
+  return out;
+}
 
 class Parser {
   private pos = 0;
-  constructor(private readonly tokens: Token[]) {}
+  /** Variables actually referenced by the expression. */
+  readonly used = new Set<Var>();
+  constructor(
+    private readonly tokens: Token[],
+    private readonly opts: ParseOptions = STRICT_OPTS,
+  ) {}
 
-  parse(): number {
+  parse(): CompiledFn {
     if (this.tokens.length === 0) throw new Error('請輸入數值');
     const v = this.expr();
     if (this.pos < this.tokens.length) throw new Error('算式格式不正確');
@@ -90,12 +165,13 @@ class Parser {
     this.pos++;
   }
 
-  private expr(): number {
+  private expr(): CompiledFn {
     let v = this.term();
     while (this.isOp('+') || this.isOp('-')) {
       const op = (this.tokens[this.pos++] as { v: string }).v;
+      const l = v;
       const r = this.term();
-      v = op === '+' ? v + r : v - r;
+      v = op === '+' ? (x, y) => l(x, y) + r(x, y) : (x, y) => l(x, y) - r(x, y);
     }
     return v;
   }
@@ -107,29 +183,38 @@ class Parser {
     return tk.t === 'num' || tk.t === 'id' || (tk.t === 'op' && (tk.v === '(' || tk.v === '√'));
   }
 
-  private term(): number {
+  private term(): CompiledFn {
     let v = this.unary();
     for (;;) {
+      const l = v;
       if (this.isOp('*')) {
         this.pos++;
-        v *= this.unary();
+        const r = this.unary();
+        v = (x, y) => l(x, y) * r(x, y);
       } else if (this.isOp('/')) {
         this.pos++;
-        const d = this.unary();
-        if (d === 0) throw new Error('不能除以 0');
-        v /= d;
+        const r = this.unary();
+        v = this.opts.strict
+          ? (x, y) => {
+              const d = r(x, y);
+              if (d === 0) throw new Error('不能除以 0');
+              return l(x, y) / d;
+            }
+          : (x, y) => l(x, y) / r(x, y);
       } else if (this.startsFactor()) {
-        v *= this.power();
+        const r = this.power();
+        v = (x, y) => l(x, y) * r(x, y);
       } else {
         return v;
       }
     }
   }
 
-  private unary(): number {
+  private unary(): CompiledFn {
     if (this.isOp('-')) {
       this.pos++;
-      return -this.unary();
+      const f = this.unary();
+      return (x, y) => -f(x, y);
     }
     if (this.isOp('+')) {
       this.pos++;
@@ -138,21 +223,33 @@ class Parser {
     return this.power();
   }
 
-  private power(): number {
+  private power(): CompiledFn {
     const base = this.primary();
     if (this.isOp('^')) {
       this.pos++;
-      return Math.pow(base, this.unary());
+      const e = this.unary();
+      return (x, y) => Math.pow(base(x, y), e(x, y));
     }
     return base;
   }
 
-  private primary(): number {
+  /** Square root; strict mode rejects negative arguments with a readable message. */
+  private sqrtOf(f: CompiledFn): CompiledFn {
+    if (!this.opts.strict) return (x, y) => Math.sqrt(f(x, y));
+    return (x, y) => {
+      const v = f(x, y);
+      if (v < 0) throw new Error('根號內不能是負數');
+      return Math.sqrt(v);
+    };
+  }
+
+  private primary(): CompiledFn {
     const tk = this.peek();
     if (!tk) throw new Error('算式不完整');
     if (tk.t === 'num') {
       this.pos++;
-      return tk.v;
+      const c = tk.v;
+      return () => c;
     }
     if (tk.t === 'op' && tk.v === '(') {
       this.pos++;
@@ -162,21 +259,30 @@ class Parser {
     }
     if (tk.t === 'op' && tk.v === '√') {
       this.pos++;
-      const v = this.unary();
-      if (v < 0) throw new Error('根號內不能是負數');
-      return Math.sqrt(v);
+      return this.sqrtOf(this.unary());
     }
     if (tk.t === 'id') {
       this.pos++;
+      if (tk.v === 'x' && this.opts.vars.includes('x')) {
+        this.used.add('x');
+        return (x) => x;
+      }
+      if (tk.v === 'y' && this.opts.vars.includes('y')) {
+        this.used.add('y');
+        return (_x, y) => y;
+      }
       // Object.hasOwn guards against inherited keys such as "constructor" or "__proto__".
-      if (Object.hasOwn(CONSTANTS, tk.v)) return CONSTANTS[tk.v];
-      if (Object.hasOwn(FUNCS, tk.v)) {
-        const fn = FUNCS[tk.v];
+      if (Object.hasOwn(CONSTANTS, tk.v)) {
+        const c = CONSTANTS[tk.v];
+        return () => c;
+      }
+      if (Object.hasOwn(this.opts.funcs, tk.v)) {
+        const fn = this.opts.funcs[tk.v];
         this.expect('(');
         const arg = this.expr();
         this.expect(')');
-        if (tk.v === 'sqrt' && arg < 0) throw new Error('根號內不能是負數');
-        return fn(arg);
+        if (tk.v === 'sqrt') return this.sqrtOf(arg);
+        return (x, y) => fn(arg(x, y));
       }
       throw new Error(`不認得「${tk.v}」`);
     }
@@ -186,12 +292,68 @@ class Parser {
 
 export function evaluate(src: string): ExprResult {
   try {
-    const value = new Parser(tokenize(normalizeInput(src).trim())).parse();
+    const value = new Parser(tokenize(normalizeInput(src).trim())).parse()(0, 0);
     if (!Number.isFinite(value)) return { ok: false, error: '結果不是有限的數' };
     return { ok: true, value };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+export type CompileResult = { ok: true; fn: CompiledFn; used: Set<Var> } | { ok: false; error: string };
+
+/**
+ * Compiles an expression in x and/or y for graphing (radians, non-strict: 1/0 → Infinity, √-1 → NaN,
+ * so the sampler can simply skip those points).
+ */
+export function compileExpr(src: string, vars: readonly Var[] = ['x', 'y']): CompileResult {
+  try {
+    const opts: ParseOptions = { vars, funcs: RAD_FUNCS, strict: false };
+    const parser = new Parser(splitIdentifiers(tokenize(normalizeInput(src).trim()), opts), opts);
+    const fn = parser.parse();
+    return { ok: true, fn, used: parser.used };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * A 2D equation solved for one variable: `y = f(x)` (solveFor 'y', fn takes x) or `x = f(y)`
+ * (solveFor 'x', fn takes y). `x = 3` / `y = -1` are the constant cases.
+ */
+export type Equation2D = { solveFor: 'x' | 'y'; fn: (t: number) => number; constant: boolean };
+export type EquationResult = ({ ok: true } & Equation2D) | { ok: false; error: string };
+
+const UNSUPPORTED_EQ = '目前只支援 y = f(x) 或 x = f(y)，例如 y = x^2、x = 3';
+
+export function parseEquation(src: string): EquationResult {
+  const text = normalizeInput(src).trim();
+  if (!text) return { ok: false, error: '請輸入方程式，例如 y = x^2' };
+  const sides = text.split('=');
+  if (sides.length !== 2) return { ok: false, error: sides.length < 2 ? '方程式需要一個「=」' : '方程式只能有一個「=」' };
+  const [lhs, rhs] = sides.map((s) => s.trim().toLowerCase());
+  let solveFor: 'x' | 'y';
+  let body: string;
+  if (lhs === 'y' || lhs === 'x') {
+    solveFor = lhs;
+    body = sides[1];
+  } else if (rhs === 'y' || rhs === 'x') {
+    solveFor = rhs;
+    body = sides[0];
+  } else {
+    return { ok: false, error: UNSUPPORTED_EQ };
+  }
+  const other: Var = solveFor === 'y' ? 'x' : 'y';
+  const c = compileExpr(body, ['x', 'y']);
+  if (!c.ok) return c;
+  if (c.used.has(solveFor)) return { ok: false, error: UNSUPPORTED_EQ };
+  const fn = c.fn;
+  return {
+    ok: true,
+    solveFor,
+    fn: other === 'x' ? (t) => fn(t, 0) : (t) => fn(0, t),
+    constant: c.used.size === 0,
+  };
 }
 
 /** Splits on top-level commas (ignoring commas inside parentheses). */

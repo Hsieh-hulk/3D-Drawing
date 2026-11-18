@@ -24,8 +24,13 @@ export class SvgPainter implements Painter {
     );
   }
 
-  polygon(pts: Pt2[], color: string, alpha: number): void {
+  polygon(pts: Pt2[], color: string, alpha: number, more: Pt2[][] = []): void {
     const op = alpha < 1 ? ` fill-opacity="${n(alpha)}"` : '';
+    if (more.length > 0) {
+      const d = [pts, ...more].map((ring) => `M${ring.map((p) => `${n(p[0])},${n(p[1])}`).join('L')}Z`).join('');
+      this.parts.push(`<path d="${d}" fill="${color}" fill-rule="nonzero"${op}/>`);
+      return;
+    }
     this.parts.push(`<polygon points="${pts.map((p) => `${n(p[0])},${n(p[1])}`).join(' ')}" fill="${color}"${op}/>`);
   }
 

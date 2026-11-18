@@ -49,6 +49,11 @@ export interface TickPrim {
 export interface PolygonPrim {
   type: 'polygon';
   pts: Pt2[];
+  /**
+   * Extra rings filled in the same path as `pts` (non-zero winding, so all rings must share one orientation).
+   * Many adjacent translucent quads drawn one by one show seams and double-darkened overlaps; one fill does not.
+   */
+  more?: Pt2[][];
   color: string;
   opacity: number;
   depth: number;

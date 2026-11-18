@@ -41,6 +41,8 @@ export function fittedAxisRange(scene: Scene, max: number): number {
   };
   for (const o of scene.objects) {
     if (!o.visible) continue;
+    // A curve or surface fills the whole axis box, so shrinking the range would clip or drop it.
+    if (o.kind === 'equation') extent = max;
     if (o.kind === 'point') grow(coordsValue(o.coords));
     if (o.kind === 'vector') {
       const e = vectorEndpoints(scene, o);
