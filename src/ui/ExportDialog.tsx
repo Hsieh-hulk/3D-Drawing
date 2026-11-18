@@ -18,14 +18,14 @@ const FORMATS: { value: ExportFormat; label: string; hint: string }[] = [
   { value: 'svg', label: 'SVG', hint: '向量，可再編輯' },
 ];
 const LINE_SCALES = [
-  { value: 0.8, label: '細' },
+  { value: 0.6, label: '細' },
   { value: 1, label: '標準' },
-  { value: 1.5, label: '粗' },
+  { value: 2, label: '粗' },
 ];
 const FONT_SCALES = [
-  { value: 0.85, label: '小' },
+  { value: 0.7, label: '小' },
   { value: 1, label: '標準' },
-  { value: 1.3, label: '大' },
+  { value: 1.5, label: '大' },
 ];
 
 function Segmented<T extends string | number>(props: {
