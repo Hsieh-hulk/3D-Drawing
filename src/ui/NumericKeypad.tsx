@@ -45,7 +45,8 @@ export function NumericKeypad({ nextName, onKey, onEnter }: Props) {
     ins('-', '輸入負號'), ins('/', '輸入分數線'), ins('√', '輸入根號'), ins('π', '輸入 π'),
     ins('.', '輸入小數點'),
     { label: `${nextName}(`, aria: `插入下一個點名 ${nextName}`, action: { type: 'insert', text: `${nextName}(` }, className: 'key-fn key-span3' },
-    { label: '清除', aria: '清除全部', action: { type: 'clear' }, className: 'key-fn key-span4' },
+    ins('x', '輸入 x'), ins('y', '輸入 y'), ins('^', '輸入次方'),
+    { label: '清除', aria: '清除全部', action: { type: 'clear' }, className: 'key-fn' },
   ];
 
   const renderKey = (k: Key) => (

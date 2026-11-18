@@ -6,6 +6,8 @@ import { useAppStore } from '../store/useAppStore';
 export function ConnectForm() {
   const scene = useAppStore((s) => s.scene);
   const runCommand = useAppStore((s) => s.runCommand);
+  const setDrawTool = useAppStore((s) => s.setDrawTool);
+  const drawTool = useAppStore((s) => s.drawTool);
   const pts = points(scene);
   const [a, setA] = useState('');
   const [b, setB] = useState('');
@@ -60,6 +62,16 @@ export function ConnectForm() {
           直線
         </button>
       </div>
+      {/* A plane needs 3+ points, so it is built by tapping them in the 3D view (same as 「▱ 建面」). */}
+      <button
+        type="button"
+        className="btn btn-ghost btn-small connect-plane"
+        aria-pressed={drawTool === 'face'}
+        onClick={() => setDrawTool('face')}
+        title="開啟建面工具：在 3D 畫面依序點選 3 個以上的點；也可輸入「平面 ABC」"
+      >
+        ▱ 平面：在圖上點選 3 個以上的點
+      </button>
       {error && (
         <p className="feedback is-error" role="alert">
           {error}

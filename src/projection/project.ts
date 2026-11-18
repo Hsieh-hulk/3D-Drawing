@@ -1,6 +1,6 @@
 import { parseEquation, prettyExpr } from '../model/expr';
 import { extrudeAlongZ, sampleEquation, simplifyPolyline } from '../model/equationSampler';
-import { clipLineToCube } from '../model/geometry';
+import { clipLineToCube, orderPolygon } from '../model/geometry';
 import {
   coordsValue,
   equations,
@@ -101,7 +101,8 @@ export function collectOccluders(scene: Scene): Triangle[] {
   }
   for (const pl of planes(scene)) {
     if (!pl.visible) continue;
-    const pos = pointPositions(scene, pl.pointIds);
+    const raw = pointPositions(scene, pl.pointIds);
+    const pos = raw && orderPolygon(raw);
     if (pos) tris.push(...triangulate(pos));
   }
   return tris;
@@ -155,7 +156,8 @@ export function projectToDrawing(scene: Scene, cam: ViewCamera, opts: ProjectOpt
   // ---- translucent plane fills ----
   for (const pl of planes(scene)) {
     if (!pl.visible) continue;
-    const pos = pointPositions(scene, pl.pointIds);
+    const raw = pointPositions(scene, pl.pointIds);
+    const pos = raw && orderPolygon(raw);
     if (!pos) continue;
     const depth = pos.reduce((s, p) => s + dot(p, cam.forward), 0) / pos.length;
     const selected = pl.id === selectedId;
@@ -166,22 +168,23 @@ export function projectToDrawing(scene: Scene, cam: ViewCamera, opts: ProjectOpt
   // ---- 2D equations: a curve on the xy-plane, or (extend3d) the surface it sweeps along z ----
   // Curves reach as far as infinite lines do (past the visible window). Surfaces stay inside the axis box
   // (±axisRange, like Desmos' bounding box); a surface as large as an infinite line would cover the screen.
-  const lineExtent = opts.lineExtent ?? R * 1.6;
+  // Exports (fixed axes) keep curves inside the axis box too, so one tall curve (x², tan x) cannot
+  // stretch the exported image.
+  const boxed = !opts.axes;
+  const lineExtent = boxed ? R : (opts.lineExtent ?? R * 1.6);
   for (const eq of equations(scene)) {
     if (!eq.visible) continue;
     const parsed = parseEquation(eq.source);
     if (!parsed.ok) continue;
     const selected = eq.id === selectedId;
-    const eqExtent = eq.extend3d ? R : lineExtent;
     // Quads of the surface; they are emitted as ONE translucent fill (see PolygonPrim.more).
     const rings: Pt2[][] = [];
     let depthSum = 0;
     let depthCount = 0;
-    // A surface must fit the box on every axis, so the dependent variable is clamped to ±R as well.
-    for (const raw of sampleEquation(parsed, eqExtent, undefined, eq.extend3d ? R : undefined)) {
-      const line = simplifyPolyline(raw);
-      if (eq.extend3d) {
-        for (const quad of extrudeAlongZ(line, eqExtent)) {
+    if (eq.extend3d) {
+      // A surface must fit the box on every axis, so the dependent variable is clamped to ±R as well.
+      for (const raw of sampleEquation(parsed, R, undefined, R)) {
+        for (const quad of extrudeAlongZ(simplifyPolyline(raw), R)) {
           const ring = quad.map(P);
           if (Math.abs(ringArea(ring)) < 1e-9) continue; // edge-on to the camera: nothing to fill
           // Front and back sheets project with opposite orientation; one orientation keeps the union intact.
@@ -190,7 +193,11 @@ export function projectToDrawing(scene: Scene, cam: ViewCamera, opts: ProjectOpt
           depthCount++;
         }
       }
-      // The curve itself stays drawn on z = 0 (for a surface it marks where it meets the xy-plane).
+    }
+    // The curve stays drawn on z = 0 over its usual extent, also when extended: it marks where the surface
+    // meets the xy-plane and must not shrink to the box when the surface is switched on.
+    for (const raw of sampleEquation(parsed, lineExtent, undefined, boxed ? R : undefined)) {
+      const line = simplifyPolyline(raw);
       for (let i = 0; i < line.length - 1; i++) {
         addSegment3(line[i], line[i + 1], eq.color, eq.extend3d ? 'plane-edge' : 'segment', { objectId: eq.id, selected });
       }
@@ -355,6 +362,8 @@ export function projectToDrawing(scene: Scene, cam: ViewCamera, opts: ProjectOpt
 
 /** Gap between the screen edge and the arrow tip of an auto axis, so the arrow and axis name stay visible. */
 const AUTO_TIP_INSET_PX = 34;
+/** Extra bottom gap: the viewport hint (bottom: 10px, ~24px tall) covers the lowest strip of the canvas. */
+const AUTO_TIP_BOTTOM_EXTRA_PX = 30;
 const MIN_TICK_MARK_GAP_PX = 8;
 const MIN_GRID_GAP_PX = 10;
 const TICK_LABEL_HEIGHT_PX = 14;
@@ -404,7 +413,10 @@ export function projectAutoAxes(cam: ViewCamera, view: ViewSettings, occluders: 
   // ---- axes ----
   if (view.showAxes) {
     const outerRect = shrinkRect(rect, -2 / ppu);
-    const innerRect = shrinkRect(rect, AUTO_TIP_INSET_PX / ppu);
+    // The bottom edge also clears the hint pill drawn over the canvas, which otherwise hides the label of an
+    // axis running toward the bottom-left (x in the textbook view).
+    const inset = shrinkRect(rect, AUTO_TIP_INSET_PX / ppu);
+    const innerRect = { ...inset, minY: inset.minY + AUTO_TIP_BOTTOM_EXTRA_PX / ppu };
     const innerOk = innerRect.maxX > innerRect.minX && innerRect.maxY > innerRect.minY;
     // Label boxes in px (centre, size), used to drop tick labels that would collide with another label.
     type Box = { c: Pt2; w: number; h: number };

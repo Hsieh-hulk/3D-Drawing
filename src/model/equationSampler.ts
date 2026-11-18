@@ -23,9 +23,28 @@ export function sampleEquation(
     return Number.isFinite(v) && Math.abs(v) <= range ? [[at(-range, v), at(range, v)]] : [];
   }
   const limit = valueLimit;
+  const isValid = (v: number) => Number.isFinite(v) && Math.abs(v) <= limit;
+  /**
+   * Between a valid and an invalid sample, finds the last valid parameter next to the boundary: the end of
+   * the domain (√(1-x²) at x = ±1) or where the curve leaves the window (x² reaching the limit). Without it
+   * the curve stops one sample early, leaving gaps at domain ends and steps on surface edges.
+   */
+  const edge = (good: number, bad: number): Vec3 => {
+    for (let k = 0; k < 40; k++) {
+      const mid = (good + bad) / 2;
+      if (isValid(eq.fn(mid))) good = mid;
+      else bad = mid;
+    }
+    const v = eq.fn(good);
+    // Leaving the window: land exactly on the limit (the bisection gets within rounding of it).
+    const clamped = Math.abs(v) > limit * (1 - 1e-6) ? Math.sign(v) * limit : v;
+    return at(good, clamped);
+  };
   const lines: Vec3[][] = [];
   let cur: Vec3[] = [];
-  let prev = NaN;
+  let prevT = NaN;
+  let prevV = NaN;
+  let prevValid = false;
   const flush = () => {
     if (cur.length >= 2) lines.push(cur);
     cur = [];
@@ -33,13 +52,27 @@ export function sampleEquation(
   for (let i = 0; i <= samples; i++) {
     const t = -range + (2 * range * i) / samples;
     const v = eq.fn(t);
-    const valid = Number.isFinite(v) && Math.abs(v) <= limit;
-    if (!valid || (cur.length > 0 && Math.abs(v - prev) > range)) flush();
+    const valid = isValid(v);
+    if (valid && prevValid && Math.abs(v - prevV) > range) {
+      flush(); // jump across an asymptote (tan x): never join the two sides
+    } else if (valid && !prevValid && i > 0) {
+      cur.push(edge(t, prevT)); // re-entering: start exactly at the boundary
+    } else if (!valid && prevValid) {
+      cur.push(edge(prevT, t)); // leaving: end exactly at the boundary
+      flush();
+    }
     if (valid) cur.push(at(t, v));
-    prev = v;
+    prevT = t;
+    prevV = v;
+    prevValid = valid;
   }
   flush();
-  return lines;
+  return lines.map(dedupe);
+}
+
+/** Removes consecutive duplicates (a boundary point can coincide with a sample). */
+function dedupe(line: Vec3[]): Vec3[] {
+  return line.filter((p, i) => i === 0 || p[0] !== line[i - 1][0] || p[1] !== line[i - 1][1]);
 }
 
 /** Drops interior points that lie on a straight line, so `x = 3` extends to a single quad, not 400. */

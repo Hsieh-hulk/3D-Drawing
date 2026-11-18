@@ -7,7 +7,7 @@ import {
   renderFrameToCanvas,
   shareBlob,
 } from '../export/exporters';
-import { buildExportFrame, exportFileName, type ExportFormat, type ExportFrame, type ExportOptions } from '../export/frame';
+import { buildExportFrame, exportFileName, MAX_PNG_SIDE, pngSize, type ExportFormat, type ExportFrame, type ExportOptions } from '../export/frame';
 import { viewportRegistry } from '../render3d/viewportRegistry';
 import { useAppStore } from '../store/useAppStore';
 import { CloseIcon } from './icons';
@@ -72,6 +72,9 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
   const setOpts = useAppStore((s) => s.setExportOptions);
   const [status, setStatus] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
+  // Coordinate labels start like the screen each time the dialog opens and can be switched for this export.
+  const [pointCoords, setPointCoords] = useState(view.showPointCoords);
+  const pressTarget = useRef<EventTarget | null>(null);
   const shareable = useMemo(() => canShareFiles(), []);
 
   useEffect(() => {
@@ -80,14 +83,15 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
     if (open && !d.open) {
       d.showModal();
       setStatus(null);
+      setPointCoords(useAppStore.getState().view.showPointCoords);
     } else if (!open && d.open) d.close();
   }, [open]);
 
   const frame: ExportFrame | null = useMemo(() => {
     if (!open || !viewportRegistry.current) return null;
     const { cam, pxPerUnit } = viewportRegistry.current.getExportContext();
-    return buildExportFrame(scene, cam, view, opts, pxPerUnit, measureText);
-  }, [open, scene, view, opts]);
+    return buildExportFrame(scene, cam, view, { ...opts, showPointCoords: pointCoords }, pxPerUnit, measureText);
+  }, [open, scene, view, opts, pointCoords]);
 
   // Live preview, rendered with the very same painter as the PNG export.
   useEffect(() => {
@@ -124,14 +128,26 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
     }
   };
 
+  const png = frame && opts.format === 'png' ? pngSize(frame, opts.pngScale) : null;
   const sizeText = frame
-    ? opts.format === 'png'
-      ? `${Math.round(frame.width * opts.pngScale)} × ${Math.round(frame.height * opts.pngScale)} px`
+    ? png
+      ? `${png.width} × ${png.height} px${png.limited ? `（已達 ${MAX_PNG_SIDE} px 上限）` : ''}`
       : `${Math.round(frame.width * 0.75)} × ${Math.round(frame.height * 0.75)} pt（向量）`
     : '';
 
   return (
-    <dialog ref={dialogRef} className="export-dialog" onClose={onClose} aria-labelledby="export-title">
+    <dialog
+      ref={dialogRef}
+      className="export-dialog"
+      onClose={onClose}
+      aria-labelledby="export-title"
+      // A click on the dimmed backdrop (the dialog element itself, outside its content) closes it; a drag that
+      // starts inside the content and ends outside does not.
+      onPointerDown={(e) => (pressTarget.current = e.target)}
+      onClick={(e) => {
+        if (e.target === dialogRef.current && pressTarget.current === dialogRef.current) onClose();
+      }}
+    >
       <div className="ex-header">
         <h2 id="export-title">匯出</h2>
         <button type="button" className="icon-btn close-btn" aria-label="關閉" title="關閉" onClick={onClose}>
@@ -196,6 +212,9 @@ export function ExportDialog({ open, onClose }: { open: boolean; onClose: () => 
             </Check>
             <Check checked={opts.showHiddenLines} onChange={(v) => set({ showHiddenLines: v })}>
               虛線
+            </Check>
+            <Check checked={pointCoords} onChange={setPointCoords}>
+              座標標籤
             </Check>
           </div>
         </div>

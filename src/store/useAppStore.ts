@@ -19,7 +19,7 @@ import {
 } from '../model/scene';
 import { createSolid } from '../model/solids';
 import type { Vec3, ViewPreset, ViewSettings } from '../model/types';
-import { clampRotateSpeed, loadAutosave, loadRotateSpeed, startAutosave } from './persistence';
+import { clampRotateSpeed, loadAutosave, loadAutosaveChecked, loadRotateSpeed, startAutosave, type StorageStatus } from './persistence';
 
 /** Drawing tools in the 3D view: drag point→point to connect, or tap points to outline a face. */
 export type DrawTool = 'line' | 'face' | null;
@@ -98,11 +98,25 @@ interface AppState {
   /** Drag lifecycle: one undo entry per drag, live moves in between. */
   beginDrag: () => void;
   movePointLive: (id: string, pos: Vec3) => void;
+  /** Aborts the drag in progress: restores the scene saved by beginDrag (no redo entry). */
+  cancelDrag: () => void;
 
   loadProjectText: (text: string) => ActionResult;
 
   exportOptions: ExportOptions;
   setExportOptions: (patch: Partial<ExportOptions>) => void;
+
+  /** Whether autosave to this browser works (shown as a warning when it does not). */
+  storageStatus: StorageStatus;
+  /** Another tab saved newer work; this tab stops autosaving until the student chooses. */
+  externalChange: boolean;
+  /** One-off message about the autosave (e.g. it was corrupt and was backed up). */
+  storageNotice: string | null;
+  dismissStorageNotice: () => void;
+  /** Loads the other tab's autosave (undoable). */
+  reloadFromStorage: () => void;
+  /** Keeps this tab's work and saves it over the other tab's. */
+  keepThisTab: () => void;
 }
 
 /** Coordinate text written after a drag: exact form for snapped values, 2 decimals otherwise. */
@@ -110,7 +124,8 @@ function coordText(v: number, snap: number): string {
   return snap > 0 ? toExactText(v) : formatNumber(Math.round(v * 100) / 100);
 }
 
-const saved = loadAutosave();
+const boot = loadAutosaveChecked();
+const saved = boot.saved;
 
 export const useAppStore = create<AppState>((set, get) => {
   /** Applies a new scene and records the previous one for undo. */
@@ -298,6 +313,12 @@ export const useAppStore = create<AppState>((set, get) => {
       set({ past: [...past, scene].slice(-HISTORY_LIMIT), future: [] });
     },
 
+    cancelDrag: () => {
+      const { past } = get();
+      if (past.length === 0) return;
+      set({ scene: past[past.length - 1], past: past.slice(0, -1) });
+    },
+
     movePointLive: (id, pos) => {
       const snap = get().view.snap;
       set((s) => ({
@@ -321,7 +342,31 @@ export const useAppStore = create<AppState>((set, get) => {
 
     exportOptions: { ...DEFAULT_EXPORT_OPTIONS, ...saved?.exportOptions },
     setExportOptions: (patch) => set((s) => ({ exportOptions: { ...s.exportOptions, ...patch } })),
+
+    storageStatus: 'ok',
+    storageNotice: boot.notice,
+    dismissStorageNotice: () => set({ storageNotice: null }),
+    externalChange: false,
+    reloadFromStorage: () => {
+      const latest = loadAutosave();
+      if (latest) {
+        commit(latest.scene, {
+          selectedId: null,
+          view: { ...get().view, ...latest.view },
+          exportOptions: { ...get().exportOptions, ...latest.exportOptions },
+        });
+      }
+      set({ externalChange: false });
+      autosave.resume();
+    },
+    keepThisTab: () => {
+      set({ externalChange: false });
+      autosave.resume();
+    },
   };
 });
 
-startAutosave(useAppStore);
+const autosave = startAutosave(useAppStore, {
+  onStatus: (storageStatus) => useAppStore.setState({ storageStatus }),
+  onExternalChange: () => useAppStore.setState({ externalChange: true }),
+});

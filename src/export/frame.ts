@@ -18,6 +18,8 @@ export interface ExportOptions {
   fontScale: number;
   /** Shorten the axes (and grid) to just beyond the objects, so small figures are not dwarfed by ±5 axes. */
   fitAxes: boolean;
+  /** Coordinates next to point names; omitted = same as on screen. */
+  showPointCoords?: boolean;
 }
 
 export const DEFAULT_EXPORT_OPTIONS: ExportOptions = {
@@ -84,6 +86,7 @@ export function buildExportFrame(
     showGrid: opts.showGrid,
     showTickLabels: opts.showTickLabels,
     showHiddenLines: opts.showHiddenLines,
+    showPointCoords: opts.showPointCoords ?? view.showPointCoords,
     axisRange: opts.fitAxes ? fittedAxisRange(scene, view.axisRange) : view.axisRange,
   };
   const drawing = projectToDrawing(scene, cam, { view: exportView, selectedId: null });
@@ -102,8 +105,26 @@ export function buildExportFrame(
   };
 }
 
+/** Longest PNG side browsers reliably allocate; larger requests are scaled down. */
+export const MAX_PNG_SIDE = 8192;
+
+/** The PNG scale actually used for a frame: the requested one, reduced to respect MAX_PNG_SIDE. */
+export function effectivePngScale(frame: Pick<ExportFrame, 'width' | 'height'>, scale: number): number {
+  return Math.min(scale, MAX_PNG_SIDE / Math.max(frame.width, frame.height));
+}
+
+/** Pixel size of the PNG that renderFrameToCanvas produces (shown in the dialog, so both always agree). */
+export function pngSize(
+  frame: Pick<ExportFrame, 'width' | 'height'>,
+  scale: number,
+): { width: number; height: number; limited: boolean } {
+  const k = effectivePngScale(frame, scale);
+  return { width: Math.max(1, Math.round(frame.width * k)), height: Math.max(1, Math.round(frame.height * k)), limited: k < scale };
+}
+
 export function exportFileName(format: ExportFormat, now = new Date()): string {
   const pad = (n: number) => String(n).padStart(2, '0');
-  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}`;
+  // Seconds keep two exports made within the same minute from getting the same name.
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   return `空間向量繪圖_${stamp}.${format}`;
 }

@@ -1,10 +1,8 @@
 import { CanvasPainter } from '../render2d/canvasRenderer';
 import { paintDrawing, type FontSpec, cssFont } from '../render2d/paint';
-import type { ExportFormat, ExportFrame, ExportOptions } from './frame';
+import { effectivePngScale, pngSize, type ExportFormat, type ExportFrame, type ExportOptions } from './frame';
 import { frameToPdf } from './pdf';
 import { frameToSvg } from './svg';
-
-const MAX_PNG_SIDE = 8192;
 
 let measureCtx: CanvasRenderingContext2D | null = null;
 /** Text measurement shared by every backend, so label layout is identical in PNG, SVG and PDF. */
@@ -16,10 +14,11 @@ export function measureText(str: string, font: FontSpec): number {
 
 /** Renders the frame on a canvas at `scale`× resolution. */
 export function renderFrameToCanvas(frame: ExportFrame, scale: number, background: string | null): HTMLCanvasElement {
-  const k = Math.min(scale, MAX_PNG_SIDE / Math.max(frame.width, frame.height));
+  const k = effectivePngScale(frame, scale);
+  const size = pngSize(frame, scale);
   const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(frame.width * k));
-  canvas.height = Math.max(1, Math.round(frame.height * k));
+  canvas.width = size.width;
+  canvas.height = size.height;
   const ctx = canvas.getContext('2d')!;
   ctx.setTransform(k, 0, 0, k, 0, 0);
   if (background) {

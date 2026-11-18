@@ -3,7 +3,9 @@ import { viewportRegistry } from '../render3d/viewportRegistry';
 import { VIEW_PRESET_LABELS } from '../model/viewPresets';
 import { ROTATE_SPEED_MAX, ROTATE_SPEED_MIN, ROTATE_SPEED_STEP } from '../store/persistence';
 import { useAppStore } from '../store/useAppStore';
-import { CubeIcon, MinusIcon, PlusIcon, TopViewIcon, WrenchIcon } from './icons';
+import { coordsValue, points, vectorEndpoints, vectors } from '../model/scene';
+import type { Vec3 } from '../model/types';
+import { CubeIcon, FitIcon, MinusIcon, PlusIcon, TopViewIcon, WrenchIcon } from './icons';
 
 const ZOOM_STEP = 1.25;
 
@@ -19,14 +21,22 @@ export function ViewTools() {
   const setRotateSpeed = useAppStore((s) => s.setRotateSpeed);
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+    // Keyboard users land inside the settings, and get back to the trigger on Escape.
+    popoverRef.current?.querySelector<HTMLElement>('button, input')?.focus({ preventScroll: true });
     const onDown = (e: PointerEvent) => {
       if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false);
+      if (e.key !== 'Escape') return;
+      e.stopPropagation(); // closing the settings must not also clear the selection (App's Escape)
+      const inside = rootRef.current?.contains(document.activeElement);
+      setOpen(false);
+      if (inside) triggerRef.current?.focus();
     };
     document.addEventListener('pointerdown', onDown);
     document.addEventListener('keydown', onKey);
@@ -37,6 +47,19 @@ export function ViewTools() {
   }, [open]);
 
   const zoom = (f: number) => viewportRegistry.current?.zoomBy(f);
+  /** Frames every visible point and vector (objects far outside the view are found again). */
+  const fitAll = () => {
+    const { scene, view: v } = useAppStore.getState();
+    const pts: Vec3[] = points(scene)
+      .filter((p) => p.visible)
+      .map((p) => coordsValue(p.coords));
+    for (const vec of vectors(scene)) {
+      const e = vec.visible ? vectorEndpoints(scene, vec) : null;
+      if (e) pts.push(e.start, e.end);
+    }
+    const R = v.axisRange;
+    viewportRegistry.current?.fitTo(pts.length > 0 ? [...pts, [0, 0, 0]] : [[-R, -R, -R], [R, R, R]]);
+  };
 
   return (
     <div className="view-tools" ref={rootRef}>
@@ -65,6 +88,7 @@ export function ViewTools() {
         </div>
         <button
           type="button"
+          ref={triggerRef}
           className="vt-btn vt-btn--solo"
           aria-expanded={open}
           aria-label="設定"
@@ -76,7 +100,7 @@ export function ViewTools() {
       </div>
 
       {open && (
-        <div className="settings-popover" role="dialog" aria-label="設定">
+        <div className="settings-popover" role="dialog" aria-label="設定" ref={popoverRef}>
           <h2 className="settings-title">顯示</h2>
           <div className="segmented segmented--wrap" role="group" aria-label="顯示">
             <button type="button" className="btn" aria-pressed={view.showGrid} onClick={toggleGrid}>
@@ -91,6 +115,14 @@ export function ViewTools() {
             <button type="button" className="btn" aria-pressed={view.showHiddenLines} onClick={toggleHiddenLines} title="被遮住的邊以虛線顯示">
               虛線
             </button>
+          </div>
+          <h2 className="settings-title">其他視角</h2>
+          <div className="segmented segmented--wrap" role="group" aria-label="其他視角">
+            {(['front', 'right'] as const).map((p) => (
+              <button key={p} type="button" className="btn" aria-pressed={view.preset === p} onClick={() => setPreset(p)}>
+                {VIEW_PRESET_LABELS[p]}
+              </button>
+            ))}
           </div>
           <h2 className="settings-title">
             <label htmlFor="rotate-speed">旋轉靈敏度</label>
@@ -137,6 +169,9 @@ export function ViewTools() {
         </button>
         <button type="button" className="vt-btn" aria-label="縮小" title="縮小" onClick={() => zoom(1 / ZOOM_STEP)}>
           <MinusIcon />
+        </button>
+        <button type="button" className="vt-btn" aria-label="顯示全部物件" title="顯示全部物件" onClick={fitAll}>
+          <FitIcon />
         </button>
       </div>
     </div>

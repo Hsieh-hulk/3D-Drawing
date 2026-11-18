@@ -187,6 +187,14 @@ export function parseProject(text: string): ParseResult {
       if (isBool(v[k])) view[k] = v[k];
     }
     if (v.snap === 0 || v.snap === 0.5 || v.snap === 1) view.snap = v.snap;
+    if (typeof v.axisRange === 'number' && Number.isInteger(v.axisRange) && v.axisRange >= 1 && v.axisRange <= 100) {
+      view.axisRange = v.axisRange;
+    }
+  }
+
+  // Nothing usable at all: opening it would just wipe the current drawing.
+  if (out.length === 0 && dropped > 0) {
+    return { ok: false, error: `檔案中的 ${dropped} 個物件都無法讀取，未開啟（目前的圖保持不變）` };
   }
 
   return { ok: true, scene: { objects: out }, view, dropped };

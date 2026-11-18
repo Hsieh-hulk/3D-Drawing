@@ -144,3 +144,35 @@ describe('undo / redo', () => {
     expect(useAppStore.getState().scene.objects).toHaveLength(1);
   });
 });
+
+describe('opening files (QA-38)', () => {
+  it('restores the axis range and refuses files with nothing usable', () => {
+    const a = runCommand('A(1,2,3)', EMPTY_SCENE);
+    if (!a.ok) throw new Error(a.error);
+    const text = serializeProject(a.scene, { ...DEFAULT_VIEW, axisRange: 8 });
+    const r = parseProject(text);
+    expect(r.ok && r.view.axisRange).toBe(8);
+    const bad = JSON.parse(text);
+    bad.scene.objects[0].name = '頂點甲';
+    const r2 = parseProject(JSON.stringify(bad));
+    expect(r2.ok).toBe(false);
+  });
+});
+
+describe('cancelling a drag (QA-28)', () => {
+  beforeEach(() => useAppStore.setState({ scene: EMPTY_SCENE, past: [], future: [], selectedId: null }));
+
+  it('puts the point back and leaves no undo entry', () => {
+    const s = useAppStore.getState();
+    s.runCommand('A(1,2,3)');
+    const before = useAppStore.getState().scene;
+    const pastLen = useAppStore.getState().past.length;
+    const id = pointByName(before, 'A')!.id;
+    useAppStore.getState().beginDrag();
+    useAppStore.getState().movePointLive(id, [4, 4, 4]);
+    useAppStore.getState().cancelDrag();
+    const after = useAppStore.getState();
+    expect(after.scene).toBe(before);
+    expect(after.past).toHaveLength(pastLen);
+  });
+});

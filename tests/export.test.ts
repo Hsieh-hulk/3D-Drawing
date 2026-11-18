@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   buildExportFrame,
   DEFAULT_EXPORT_OPTIONS,
+  effectivePngScale,
   exportFileName,
   fittedAxisRange,
+  pngSize,
   type ExportOptions,
 } from '../src/export/frame';
 import { frameToPdf, parseColor } from '../src/export/pdf';
@@ -150,7 +152,7 @@ describe('export frame', () => {
   });
 
   it('names files with a timestamp and the right extension', () => {
-    expect(exportFileName('pdf', new Date(2026, 10, 7, 9, 5))).toBe('空間向量繪圖_20261107-0905.pdf');
+    expect(exportFileName('pdf', new Date(2026, 10, 7, 9, 5, 7))).toBe('空間向量繪圖_20261107-090507.pdf');
   });
 });
 
@@ -228,5 +230,40 @@ describe('PDF export', () => {
     const f = buildExportFrame(EMPTY_SCENE, cam, view, opts(), 60, measure);
     expect(frameToPdf(f, measure, '#ffffff')).toContain('%%EOF');
     expect(solids(EMPTY_SCENE)).toHaveLength(0);
+  });
+});
+
+describe('export bounds and sizes (QA-29 / QA-35)', () => {
+  it('clips plain curves to the axis box so x^2 and tan(x) do not stretch the export', () => {
+    let s: Scene = EMPTY_SCENE;
+    for (const cmd of ['y = x^2', 'y = tan(x)']) {
+      const x = runCommand(cmd, s);
+      if (!x.ok) throw new Error(x.error);
+      s = x.scene;
+    }
+    const frame = buildExportFrame(s, cam, view, opts({ fitAxes: false }), 60, measure);
+    const R = view.axisRange;
+    // Every curve point must project inside the screen bounds of the xy-square of the axis box.
+    const corners = [-R, R].flatMap((x) => [-R, R].map((y) => [x * cam.right[0] + y * cam.right[1], x * cam.up[0] + y * cam.up[1]]));
+    const [minX, maxX] = [Math.min(...corners.map((p) => p[0])), Math.max(...corners.map((p) => p[0]))];
+    const [minY, maxY] = [Math.min(...corners.map((p) => p[1])), Math.max(...corners.map((p) => p[1]))];
+    const eqIds = new Set(s.objects.map((o) => o.id));
+    const lines = frame.drawing.prims.filter((p) => p.type === 'line' && p.objectId && eqIds.has(p.objectId));
+    expect(lines.length).toBeGreaterThan(10);
+    for (const l of lines) {
+      if (l.type !== 'line') continue;
+      for (const [x, y] of [l.a, l.b]) {
+        expect(x).toBeGreaterThanOrEqual(minX - 1e-6);
+        expect(x).toBeLessThanOrEqual(maxX + 1e-6);
+        expect(y).toBeGreaterThanOrEqual(minY - 1e-6);
+        expect(y).toBeLessThanOrEqual(maxY + 1e-6);
+      }
+    }
+  });
+
+  it('reports the PNG size actually produced when the 8192 px limit applies', () => {
+    expect(pngSize({ width: 2952, height: 2928 }, 4)).toEqual({ width: 8192, height: 8125, limited: true });
+    expect(pngSize({ width: 400, height: 300 }, 2)).toEqual({ width: 800, height: 600, limited: false });
+    expect(effectivePngScale({ width: 400, height: 300 }, 4)).toBe(4);
   });
 });

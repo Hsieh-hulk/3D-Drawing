@@ -14,13 +14,15 @@ const PRESET_DIRECTIONS: Record<ViewPreset, Vec3> = {
   textbook: normalize([2.6, 1, 1.15]),
   front: [1, 0, 0],
   right: [0, 1, 0],
-  top: normalize([1e-3, 0, 1]),
+  // Just enough tilt to keep the orientation defined with z-up (OrbitControls' own pole limit is 1e-6);
+  // a larger tilt showed extended 3D surfaces as a faint band instead of a pure top view.
+  top: normalize([1e-5, 0, 1]),
 };
 
 export const VIEW_PRESET_LABELS: Record<ViewPreset, string> = {
-  textbook: '立體視圖',
-  front: '前視圖',
-  right: '右視圖',
+  textbook: '立體視圖（課本斜視圖）',
+  front: '前視圖（Y、Z）',
+  right: '右視圖（X、Z）',
   top: '俯視圖',
 };
 
