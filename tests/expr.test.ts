@@ -173,3 +173,88 @@ describe('helpers', () => {
     expect(formatNumber(-0.0001)).toBe('0');
   });
 });
+
+describe('scientific notation (QA-05)', () => {
+  it.each([
+    ['1e-3', 0.001],
+    ['2e2', 200],
+    ['2E+2', 200],
+    ['1.5e1', 15],
+  ])('evaluate(%s) = %s', (src, expected) => {
+    expect(value(src)).toBeCloseTo(expected, 12);
+  });
+
+  it('rejects overflowing exponents instead of reading e as a constant', () => {
+    expect(evaluate('1e309').ok).toBe(false);
+  });
+
+  it('keeps e as the constant when no digits follow', () => {
+    expect(value('2e')).toBeCloseTo(2 * Math.E);
+    const c = compileExpr('2e-x', ['x']);
+    expect(c.ok && c.fn(1, 0)).toBeCloseTo(2 * Math.E - 1);
+  });
+});
+
+describe('trig units (QA-06)', () => {
+  it('accepts the degree sign in coordinates (already degrees)', () => {
+    expect(value('cos(60°)')).toBeCloseTo(0.5);
+    expect(value('sin(90)')).toBeCloseTo(1);
+  });
+
+  it('converts the degree sign in equations (radians)', () => {
+    const r = parseEquation('y = sin(90°)');
+    expect(r.ok && r.fn(0)).toBeCloseTo(1);
+    const plain = parseEquation('y = sin(90)');
+    expect(plain.ok && plain.fn(0)).toBeCloseTo(Math.sin(90));
+  });
+
+  it('supports deg() and rad() unit markers in both modes', () => {
+    expect(value('sin(deg(30))')).toBeCloseTo(0.5);
+    expect(value('sin(rad(pi/6))')).toBeCloseTo(0.5);
+    const d = parseEquation('y = sin(deg(30))');
+    expect(d.ok && d.fn(0)).toBeCloseTo(0.5);
+    const r = parseEquation('y = sin(rad(x))');
+    expect(r.ok && r.fn(Math.PI / 2)).toBeCloseTo(1);
+  });
+});
+
+describe('real odd roots (QA-07)', () => {
+  it('takes real odd roots of negative bases', () => {
+    expect(value('(-8)^(1/3)')).toBeCloseTo(-2);
+    expect(value('(-8)^(2/3)')).toBeCloseTo(4);
+    expect(value('cbrt(-27)')).toBeCloseTo(-3);
+  });
+
+  it('draws the left half of y = x^(1/3) and y = cbrt(x)', () => {
+    const a = parseEquation('y = x^(1/3)');
+    expect(a.ok && a.fn(-8)).toBeCloseTo(-2);
+    const b = parseEquation('y = cbrt(x)');
+    expect(b.ok && b.fn(-27)).toBeCloseTo(-3);
+  });
+
+  it('keeps even roots of negatives undefined', () => {
+    const r = parseEquation('y = x^(1/2)');
+    expect(r.ok && Number.isNaN(r.fn(-4))).toBe(true);
+    expect(evaluate('(-4)^(1/2)').ok).toBe(false);
+  });
+});
+
+describe('handwriting forms and messages (QA-41 / QA-53)', () => {
+  it('reads |x| as abs(x) and ** as ^', () => {
+    const a = parseEquation('y = |x|');
+    expect(a.ok && a.fn(-3)).toBe(3);
+    const b = parseEquation('y = x**2');
+    expect(b.ok && b.fn(3)).toBe(9);
+    expect(value('|-2| + 2**3')).toBe(10);
+  });
+
+  it('says a function needs parentheses (sin x)', () => {
+    const r = parseEquation('y = sin x');
+    expect(!r.ok && r.error).toContain('sin(x)');
+  });
+
+  it('shows a whole emoji in the error message', () => {
+    const r = evaluate('1😀');
+    expect(!r.ok && r.error).toContain('😀');
+  });
+});

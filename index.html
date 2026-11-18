@@ -9,7 +9,12 @@
     <title>空間向量繪圖</title>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Shown until React renders (slow networks would otherwise see a blank page); replaced on mount. -->
+    <div id="root">
+      <p style="margin: 0; padding: 40vh 16px 0; text-align: center; font: 15px system-ui, sans-serif; color: #5f6873">
+        空間向量繪圖載入中…
+      </p>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

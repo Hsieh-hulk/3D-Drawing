@@ -1,3 +1,4 @@
+import { sampleEquation } from './equationSampler';
 import { evaluate, normalizeInput, parseEquation, splitTopLevel } from './expr';
 import type { Vec3 } from './types';
 import { cross, dot, length, scale, sub } from './vec3';
@@ -46,7 +47,7 @@ const EQUATION_RE = /^[xy]\s*=|=\s*[xy]$/i;
 const AXIS_NAMES = ['x', 'y', 'z'];
 
 export function parseCoords(body: string): { ok: true; coords: Coords } | { ok: false; error: string } {
-  const parts = splitTopLevel(body);
+  const parts = body.trim() === '' ? [] : splitTopLevel(body);
   if (parts.length !== 3) return { ok: false, error: `需要 3 個座標 (x, y, z)，目前有 ${parts.length} 個` };
   const coords: { src: string; value: number }[] = [];
   for (let i = 0; i < 3; i++) {
@@ -57,13 +58,25 @@ export function parseCoords(body: string): { ok: true; coords: Coords } | { ok: 
   return { ok: true, coords: coords as Coords };
 }
 
+/** Coordinates use degrees but equations use radians, so feedback names the unit whenever trig is involved. */
+const TRIG_RE = /(sin|cos|tan)\s*\(/i;
+function trigNote(text: string, unit: '度' | '弧度'): string {
+  return TRIG_RE.test(text) ? `（三角函數以「${unit}」計）` : '';
+}
+
 function missingPoint(name: string): string {
   return `找不到點 ${name}，請先輸入 ${name}(x, y, z)`;
 }
 
 export function runCommand(input: string, scene: Scene): CommandResult {
   // Normalize full-width characters, but keep case for point names (vector names are lower-case).
-  const text = normalizeInput(input).trim();
+  const text = normalizeInput(input)
+    .trim()
+    // Tolerate common extras: a trailing ; or , and a 點 / 向量 prefix copied from the problem text.
+    .replace(/[;,]+$/, '')
+    .replace(/^(?:點|point)\s*(?=[A-Z(])/, '')
+    .replace(/^(?:向量|vector|vec)\s*(?=[a-z][0-9]*\s*=)/, '')
+    .trim();
   if (!text) return { ok: false, error: '請輸入內容，例如 A(1, 2, 3)' };
 
   const looksLikeEquation = EQUATION_RE.test(text);
@@ -79,7 +92,7 @@ export function runCommand(input: string, scene: Scene): CommandResult {
     if (existing) {
       return {
         ok: true,
-        message: `已更新向量 ${name}`,
+        message: `已更新向量 ${name}${trigNote(body, '度')}`,
         scene: {
           objects: scene.objects.map((o) =>
             o.id === existing.id && o.kind === 'vector'
@@ -91,7 +104,7 @@ export function runCommand(input: string, scene: Scene): CommandResult {
     }
     return {
       ok: true,
-      message: `已新增向量 ${name}`,
+      message: `已新增向量 ${name}${trigNote(body, '度')}`,
       scene: {
         objects: [
           ...scene.objects,
@@ -127,7 +140,7 @@ export function runCommand(input: string, scene: Scene): CommandResult {
     if (existing) {
       return {
         ok: true,
-        message: `已更新點 ${name}`,
+        message: `已更新點 ${name}${trigNote(m[2], '度')}`,
         scene: {
           objects: scene.objects.map((o) =>
             o.id === existing.id ? { ...existing, coords: parsed.coords } : o,
@@ -137,7 +150,7 @@ export function runCommand(input: string, scene: Scene): CommandResult {
     }
     return {
       ok: true,
-      message: `已新增點 ${name}`,
+      message: `已新增點 ${name}${trigNote(m[2], '度')}`,
       scene: {
         objects: [
           ...scene.objects,
@@ -162,19 +175,38 @@ export function runCommand(input: string, scene: Scene): CommandResult {
   // Anything else with "=" and a bare x or y is an attempted equation (e.g. x^2 + y^2 = 4): say what is supported.
   if (/=/.test(text) && /(^|[^a-z])[xy]([^a-z]|$)/i.test(text)) return addEquation(scene, text);
 
-  return {
-    ok: false,
-    error: '看不懂這個輸入。可以試試：A(1, 2, 3)、u = (1, -1, 2)、AB、線段 BC、y = x^2',
-  };
+  return { ok: false, error: diagnose(text) };
+}
+
+const GENERIC_ERROR = '看不懂這個輸入。可以試試：A(1, 2, 3)、u = (1, -1, 2)、AB、線段 BC、y = x^2';
+
+/** A specific hint for common student typos, falling back to the generic message with examples. */
+function diagnose(text: string): string {
+  if (/[[\]{}]/.test(text)) return '座標請用小括號 ( )，例如 A(1, 2, 3)';
+  const open = (text.match(/\(/g) ?? []).length;
+  const close = (text.match(/\)/g) ?? []).length;
+  if (open > close) return '括號沒有成對：少了右括號「)」，例如 A(1, 2, 3)';
+  if (close > open) return '括號沒有成對：少了左括號「(」，例如 A(1, 2, 3)';
+  if (/^[a-z][a-z0-9']*\s*\(/.test(text)) {
+    return '點的名稱要用大寫英文字母，例如 A(1, 2, 3)；小寫名稱加等號是向量，例如 a = (1, 2, 3)';
+  }
+  if (/^(線斷|線短|現段|綫段|線端)/.test(text)) return '是不是要輸入「線段」？例如 線段 AB';
+  const seg = /^(線段|直線|segment|seg|line)\s*(.*)$/.exec(text);
+  if (seg) return `${seg[1]}需要兩個點（大寫英文名稱），例如 ${seg[1]} AB`;
+  if (/^(平面|plane)/.test(text)) return '平面至少需要 3 個點（大寫英文名稱），例如 平面 ABC';
+  if (/^[a-z][0-9']*\s*[a-z][0-9']*$/.test(text)) return '點的名稱要用大寫：向量請輸入 AB（由 A 指向 B）';
+  return GENERIC_ERROR;
 }
 
 export function addEquation(scene: Scene, source: string): CommandResult {
   const text = normalizeInput(source).trim();
   const eq = parseEquation(text);
   if (!eq.ok) return eq;
+  // Valid but nothing to see near the origin (y = 1000, y = sqrt(-1 - x^2)): say so instead of a blank screen.
+  const empty = sampleEquation(eq, 10, 200, 20).length === 0 ? '（在目前範圍內沒有可畫出的點，請檢查式子或縮小畫面）' : '';
   return {
     ok: true,
-    message: `已新增方程式 ${text}`,
+    message: `已新增方程式 ${text}${trigNote(text, '弧度')}${empty}`,
     scene: {
       objects: [
         ...scene.objects,
@@ -203,6 +235,11 @@ function withOrigin(scene: Scene, ...names: string[]): Scene {
   };
 }
 
+/** Two different points at the same place cannot define a direction (the line or vector would be invisible). */
+function samePosition(a: PointObj, b: PointObj): boolean {
+  return length(sub(coordsValue(a.coords), coordsValue(b.coords))) < 1e-9;
+}
+
 export function addPointVector(scene: Scene, fromName: string, toName: string): CommandResult {
   scene = withOrigin(scene, fromName, toName);
   const a = pointByName(scene, fromName);
@@ -210,6 +247,7 @@ export function addPointVector(scene: Scene, fromName: string, toName: string): 
   if (!a) return { ok: false, error: missingPoint(fromName) };
   if (!b) return { ok: false, error: missingPoint(toName) };
   if (a.id === b.id) return { ok: false, error: '向量的起點與終點不能相同' };
+  if (samePosition(a, b)) return { ok: false, error: `${a.name}、${b.name} 兩點座標相同，無法建立向量` };
   const dup = vectors(scene).some((v) => v.def.type === 'points' && v.def.from === a.id && v.def.to === b.id);
   if (dup) return { ok: false, error: `向量 ${a.name}${b.name} 已存在` };
   return {
@@ -253,15 +291,8 @@ export function addPlane(scene: Scene, names: string[]): CommandResult {
   if (pos.some((p) => Math.abs(dot(sub(p, pos[0]), unit)) > 1e-6)) {
     return { ok: false, error: '這些點不在同一個平面上' };
   }
-  // Order the vertices around their centroid so "平面 ACBD" still gives a simple polygon.
-  const centroid = scale(pos.reduce((acc, p) => [acc[0] + p[0], acc[1] + p[1], acc[2] + p[2]] as Vec3, [0, 0, 0] as Vec3), 1 / pos.length);
-  let u = sub(pos[0], centroid);
-  if (length(u) < 1e-9) u = sub(pos[1], centroid);
-  u = scale(u, 1 / length(u));
-  const w = cross(unit, u);
-  const angleOf = (p: Vec3) => Math.atan2(dot(sub(p, centroid), w), dot(sub(p, centroid), u));
-  pts.sort((p, q) => angleOf(coordsValue(p.coords)) - angleOf(coordsValue(q.coords)));
-
+  // The student's point order is kept for the name (平面 ABC stays ABC); drawing orders the vertices around
+  // their centroid (orderPolygon), so "平面 ACBD" still gives a simple polygon.
   const label = pts.map((p) => p.name).join('');
   const dup = planes(scene).some(
     (pl) => pl.pointIds.length === pts.length && pts.every((p) => pl.pointIds.includes(p.id)),
@@ -293,6 +324,7 @@ export function addSegment(scene: Scene, aName: string, bName: string, infinite:
   if (!a) return { ok: false, error: missingPoint(aName) };
   if (!b) return { ok: false, error: missingPoint(bName) };
   if (a.id === b.id) return { ok: false, error: `${word}需要兩個不同的點` };
+  if (samePosition(a, b)) return { ok: false, error: `${a.name}、${b.name} 兩點座標相同，無法建立${word}` };
   const dup = segments(scene).some(
     (s) => s.infinite === infinite && ((s.a === a.id && s.b === b.id) || (s.a === b.id && s.b === a.id)),
   );

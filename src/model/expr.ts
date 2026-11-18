@@ -5,13 +5,14 @@
  *   expr    := term (('+' | '-') term)*
  *   term    := unary (('*' | '/') unary | <implicit> power)*
  *   unary   := ('-' | '+') unary | power
- *   power   := primary ('^' unary)?
+ *   power   := primary '°'* ('^' unary)?
  *   primary := number | 'pi' | 'π' | 'e' | var | func '(' expr ')' | '√' primary | '(' expr ')'
- *   func    := sqrt | abs | ln | log | exp | sin | cos | tan | asin | acos | atan
+ *   func    := sqrt | cbrt | abs | ln | log | exp | sin | cos | tan | asin | acos | atan | deg | rad
  *   var     := x | y   (only in compileExpr / parseEquation)
  *
  * evaluate() (coordinate input) takes trig in degrees, as in high-school problems;
  * compileExpr() / parseEquation() (graphs) take radians, like Desmos.
+ * Either mode accepts explicit units: `30°` / `deg(30)` is 30 degrees, `rad(π/6)` is π/6 radians.
  */
 
 export type ExprResult = { ok: true; value: number } | { ok: false; error: string };
@@ -25,13 +26,17 @@ export function normalizeInput(src: string): string {
     .replace(/[×·⋅]/g, '*')
     .replace(/÷/g, '/')
     .replace(/、/g, ',')
-    .replace(/。/g, '.');
+    .replace(/。/g, '.')
+    .replace(/º/g, '°')
+    // Common handwriting / programming forms: x**2 → x^2, |x| → abs(x).
+    .replace(/\*\*/g, '^')
+    .replace(/\|([^|]+)\|/g, 'abs($1)');
 }
 
 type Token =
   | { t: 'num'; v: number }
   | { t: 'id'; v: string }
-  | { t: 'op'; v: '+' | '-' | '*' | '/' | '^' | '(' | ')' | '√' };
+  | { t: 'op'; v: '+' | '-' | '*' | '/' | '^' | '(' | ')' | '√' | '°' };
 
 function tokenize(src: string): Token[] {
   const tokens: Token[] = [];
@@ -41,19 +46,22 @@ function tokenize(src: string): Token[] {
     if (ch === ' ' || ch === '\t') {
       i++;
     } else if (/[0-9.]/.test(ch)) {
-      const m = /^(\d+\.?\d*|\.\d+)/.exec(src.slice(i));
+      // Scientific notation (1e-3, 2E+2) only when digits follow the e; otherwise `2e` stays 2·e.
+      const m = /^(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?/.exec(src.slice(i));
       if (!m) throw new Error(`無法辨識的數字「${ch}」`);
-      tokens.push({ t: 'num', v: parseFloat(m[1]) });
-      i += m[1].length;
+      tokens.push({ t: 'num', v: parseFloat(m[0]) });
+      i += m[0].length;
     } else if (/[a-zA-Zπ]/.test(ch)) {
       const m = /^(π|[a-zA-Z]+)/.exec(src.slice(i))!;
       tokens.push({ t: 'id', v: m[1].toLowerCase() });
       i += m[1].length;
-    } else if ('+-*/^()√'.includes(ch)) {
+    } else if ('+-*/^()√°'.includes(ch)) {
       tokens.push({ t: 'op', v: ch as '+' });
       i++;
     } else {
-      throw new Error(`無法辨識的符號「${ch}」`);
+      // Read a whole code point so emoji and other astral characters are not shown as broken halves.
+      const whole = String.fromCodePoint(src.codePointAt(i) ?? 0);
+      throw new Error(`無法辨識的符號「${whole}」`);
     }
   }
   return tokens;
@@ -64,6 +72,7 @@ const DEG = Math.PI / 180;
 /** Functions shared by both angle modes. */
 const BASE_FUNCS: Record<string, (x: number) => number> = {
   sqrt: Math.sqrt,
+  cbrt: Math.cbrt,
   abs: Math.abs,
   ln: Math.log,
   log: Math.log10,
@@ -78,6 +87,9 @@ const DEG_FUNCS: Record<string, (x: number) => number> = {
   asin: (x) => Math.asin(x) / DEG,
   acos: (x) => Math.acos(x) / DEG,
   atan: (x) => Math.atan(x) / DEG,
+  // Unit markers: the argument is in degrees / radians, converted to this mode's angle unit.
+  deg: (x) => x,
+  rad: (x) => x / DEG,
 };
 /** Equations such as y = sin(x): x is a length, so trig takes radians (like Desmos). */
 const RAD_FUNCS: Record<string, (x: number) => number> = {
@@ -88,7 +100,26 @@ const RAD_FUNCS: Record<string, (x: number) => number> = {
   asin: Math.asin,
   acos: Math.acos,
   atan: Math.atan,
+  deg: (x) => x * DEG,
+  rad: (x) => x,
 };
+
+/**
+ * Real power: a negative base with a fractional exponent p/q (q odd) has a real root, e.g. (-8)^(1/3) = -2,
+ * which Math.pow reports as NaN. Even denominators (x^(1/2)) stay NaN.
+ */
+export function realPow(b: number, e: number): number {
+  const r = Math.pow(b, e);
+  if (!Number.isNaN(r) || !(b < 0) || !Number.isFinite(e)) return r;
+  for (let q = 3; q <= 99; q += 2) {
+    const p = Math.round(e * q);
+    if (Math.abs(e * q - p) < 1e-9) {
+      const mag = Math.pow(-b, e);
+      return p % 2 === 0 ? mag : -mag;
+    }
+  }
+  return r;
+}
 
 /** Compiled expression; unused variables are simply ignored. */
 export type CompiledFn = (x: number, y: number) => number;
@@ -224,11 +255,19 @@ class Parser {
   }
 
   private power(): CompiledFn {
-    const base = this.primary();
+    let base = this.primary();
+    // Postfix degree sign: 30° means 30 degrees in either angle mode.
+    while (this.isOp('°')) {
+      this.pos++;
+      const inner = base;
+      const toUnit = this.opts.funcs.deg;
+      base = (x, y) => toUnit(inner(x, y));
+    }
     if (this.isOp('^')) {
       this.pos++;
       const e = this.unary();
-      return (x, y) => Math.pow(base(x, y), e(x, y));
+      const b = base;
+      return (x, y) => realPow(b(x, y), e(x, y));
     }
     return base;
   }
@@ -278,6 +317,7 @@ class Parser {
       }
       if (Object.hasOwn(this.opts.funcs, tk.v)) {
         const fn = this.opts.funcs[tk.v];
+        if (!this.isOp('(')) throw new Error(`${tk.v} 後面要加括號，例如 ${tk.v}(x)`);
         this.expect('(');
         const arg = this.expr();
         this.expect(')');

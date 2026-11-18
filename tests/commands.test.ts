@@ -131,3 +131,74 @@ describe('segments and removal', () => {
     expect(fail(base, '   ')).toContain('請輸入內容');
   });
 });
+
+describe('trig unit feedback (QA-06)', () => {
+  it('names degrees for coordinates and radians for equations when trig is used', () => {
+    const p = runCommand('A(sin(30), 0, 0)', EMPTY_SCENE);
+    expect(p.ok && p.message).toContain('度');
+    const eq = runCommand('y = sin(x)', EMPTY_SCENE);
+    expect(eq.ok && eq.message).toContain('弧度');
+  });
+
+  it('adds no unit note without trig', () => {
+    const p = runCommand('A(1, 2, 3)', EMPTY_SCENE);
+    expect(p.ok && p.message).toBe('已新增點 A');
+  });
+});
+
+describe('coincident points (QA-27)', () => {
+  it('refuses a line, segment or vector between two points at the same place', () => {
+    const s = run(EMPTY_SCENE, 'A(1,1,1)', 'B(1,1,1)');
+    expect(fail(s, '直線 AB')).toContain('座標相同');
+    expect(fail(s, '線段 AB')).toContain('座標相同');
+    expect(fail(s, 'AB')).toContain('座標相同');
+  });
+});
+
+describe('specific hints for common typos (QA-23)', () => {
+  it.each([
+    ['a(1,2,3)', '大寫'],
+    ['p1(1,2,3)', '大寫'],
+    ['A(1,2,3', '右括號'],
+    ['A[1,2,3]', '小括號'],
+    ['線斷AB', '線段'],
+    ['線段 A', '兩個點'],
+    ['平面AB', '3 個點'],
+  ])('%s → mentions %s', (input, hint) => {
+    const msg = fail(EMPTY_SCENE, input);
+    expect(msg).toContain(hint);
+    expect(msg).not.toContain('看不懂');
+  });
+
+  it('accepts a 點 / 向量 prefix and a trailing ; or ,', () => {
+    const s = run(EMPTY_SCENE, '點A(1,2,3)', 'B(0,0,1);', '向量 u=(1,2,3)', 'AB,');
+    expect(pointByName(s, 'A')).toBeDefined();
+    expect(pointByName(s, 'B')).toBeDefined();
+    expect(vectors(s)).toHaveLength(2);
+  });
+});
+
+describe('small command fixes (QA-40 / QA-43)', () => {
+  it('reports 0 coordinates for A()', () => {
+    expect(fail(EMPTY_SCENE, 'A()')).toContain('目前有 0 個');
+  });
+
+  it('keeps the typed point order in a plane name', () => {
+    const s = run(EMPTY_SCENE, 'A(0,0,0)', 'B(1,0,0)', 'C(0,1,0)', 'D(1,1,0)');
+    const r = runCommand('平面 ABDC', s);
+    expect(r.ok && r.message).toBe('已新增平面 ABDC');
+    const r2 = runCommand('平面 ABC', s);
+    expect(r2.ok && r2.message).toBe('已新增平面 ABC');
+  });
+});
+
+describe('equations with nothing to draw (QA-44)', () => {
+  it('adds them but explains the empty screen', () => {
+    for (const src of ['y = 1000', 'y = sqrt(-1 - x^2)']) {
+      const r = runCommand(src, EMPTY_SCENE);
+      expect(r.ok && r.message).toContain('沒有可畫出的點');
+    }
+    const ok = runCommand('y = x^2', EMPTY_SCENE);
+    expect(ok.ok && ok.message).not.toContain('沒有可畫出的點');
+  });
+});

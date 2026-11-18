@@ -169,6 +169,10 @@ body {
   flex: 1;
   min-width: 0;
   position: relative;
+  /* Floating tools stay inside the drawing area instead of spilling over the panel on short screens. */
+  overflow: hidden;
+  container-type: size;
+  container-name: stage;
 }
 
 .panel {
@@ -327,37 +331,37 @@ body {
   flex-shrink: 0;
 }
 
-/* Small toggle at the bottom-left of the window, just above the keyboard (or the window edge when collapsed). */
+/* Keyboard toggle sits in the input row, next to 新增 (it used to float over the panel and hid list items). */
 .kbd-toggle {
-  position: absolute;
-  left: max(12px, env(safe-area-inset-left));
-  bottom: calc(100% + 10px);
-  z-index: 6;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 4px;
+  min-width: var(--tap);
   height: var(--tap);
-  padding: 0 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0 8px;
+  border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #2b3036;
-  color: #fff;
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+  background: var(--surface);
+  color: var(--text);
   cursor: pointer;
   touch-action: manipulation;
 }
 
 .kbd-toggle:hover {
-  background: #3a4048;
+  background: #eef0f3;
 }
 
 .kbd-toggle[aria-expanded='true'] {
-  background: #3a4048;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
 }
 
 .kbd-toggle:focus-visible {
-  outline: 2px solid #fff;
-  outline-offset: -3px;
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .kbd-panel {
@@ -459,13 +463,9 @@ body {
   grid-row: span 2;
 }
 
-/* The toggle floats over the panel's bottom-left: keep the last panel content clear of it. */
-.panel {
-  padding-bottom: 72px;
-}
-
-.workspace.is-panel-closed ~ .kbd-dock {
-  display: none; /* no input panel, so no keyboard */
+.workspace.is-panel-closed ~ .kbd-dock,
+.workspace:has(.panel.is-collapsed) ~ .kbd-dock {
+  display: none; /* input panel closed or sheet collapsed: no field to type into, so no keyboard */
 }
 
 .examples {
@@ -486,6 +486,12 @@ body {
   margin: 4px 0 8px;
   padding-left: 18px;
   line-height: 1.6;
+}
+
+.chip-hint {
+  margin: 4px 0 6px;
+  font-size: 12px;
+  color: var(--text-muted);
 }
 
 .chip-row {
@@ -539,6 +545,22 @@ body {
   grid-template-columns: 1.4fr 1fr 1fr;
   gap: 6px;
   margin-top: 8px;
+}
+
+.connect-plane {
+  width: 100%;
+  margin-top: 6px;
+  font-size: 13px;
+}
+
+.connect-plane[aria-pressed='true'] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+
+/* Colour dot of rows that have colour settings: tapping it opens them. */
+.swatch--editable {
+  cursor: pointer;
 }
 
 /* ---------- Object list ---------- */
@@ -914,7 +936,8 @@ body {
   position: absolute;
   top: 12px;
   left: 12px;
-  right: 12px;
+  /* Leave the top-right column to .view-tools so wrapped buttons (完成 / 取消) never slide under it. */
+  right: calc(3 * var(--tap) + 8px + 24px + env(safe-area-inset-right));
   z-index: 2;
   display: flex;
   flex-wrap: wrap;
@@ -1015,6 +1038,14 @@ body {
   flex-direction: column;
   align-items: flex-end;
   gap: 8px;
+  /* Only the buttons are interactive: the empty corner of the cluster must not swallow taps on the canvas. */
+  pointer-events: none;
+}
+
+.view-tools-group,
+.view-tools .vt-btn--solo,
+.settings-popover {
+  pointer-events: auto;
 }
 
 .view-tools-row {
@@ -1073,6 +1104,7 @@ body {
 
 .panel-toggle {
   position: absolute;
+  /* The visible tab is 24px wide; the ::after below widens its touch area to 44px. */
   /* Edge tab, vertically centred, so it never covers the point/line/face tools at the top-left. */
   top: 50%;
   left: 0;
@@ -1084,11 +1116,25 @@ body {
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
 }
 
+.panel-toggle::after {
+  content: '';
+  position: absolute;
+  inset: -4px -20px -4px 0;
+}
+
 .workspace.is-panel-closed .panel {
   display: none;
 }
 
 .settings-popover {
+  /* Floats over the zoom buttons instead of pushing them below the screen; scrolls on short screens. */
+  position: absolute;
+  top: calc(var(--tap) + 8px);
+  right: 0;
+  z-index: 1;
+  max-height: calc(100cqh - var(--tap) - 32px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   width: min(320px, calc(100vw - 24px));
   padding: 12px 14px 14px;
   border: 1px solid var(--border);
@@ -1148,6 +1194,29 @@ body {
   color: var(--text-muted);
 }
 
+.autosave-note.is-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+
+.tab-conflict {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+.tab-conflict p {
+  margin: 0 0 6px;
+}
+
+.tab-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 /* ---------- Export ---------- */
 .toolbar-export {
   flex-shrink: 0;
@@ -1165,6 +1234,27 @@ body {
   color: var(--text);
   box-shadow: 0 20px 60px rgba(15, 23, 42, 0.25);
   overflow-y: auto;
+}
+
+/* Header and Download/Share stay visible; the options in between scroll (laptops, projectors, phones). */
+.export-dialog[open] {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.export-dialog[open] .ex-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 8px;
+}
+
+.export-dialog[open] .ex-header,
+.export-dialog[open] .ex-actions,
+.export-dialog[open] .ex-share-hint,
+.export-dialog[open] .feedback {
+  flex-shrink: 0;
 }
 
 .export-dialog::backdrop {
@@ -1297,6 +1387,7 @@ body {
   display: flex;
   gap: 8px;
   padding: 8px 20px 0;
+  border-top: 1px solid var(--border);
 }
 
 .ex-actions .btn {
@@ -1323,6 +1414,17 @@ body {
 .chip,
 .examples summary {
   min-height: var(--tap);
+}
+
+/* Keyboard focus on the drawing (arrow keys rotate) and on object rows (Enter selects). */
+.viewport:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: -3px;
+}
+
+.obj-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 summary:focus-visible,
@@ -1427,7 +1529,7 @@ summary:focus-visible,
     flex: 1;
     min-height: 0;
     overflow-y: auto;
-    padding: 12px 16px calc(max(16px, env(safe-area-inset-bottom)) + 56px);
+    padding: 12px 16px max(16px, env(safe-area-inset-bottom));
     -webkit-overflow-scrolling: touch;
   }
 
@@ -1438,6 +1540,7 @@ summary:focus-visible,
   /* Height chosen by dragging the handle (stays where the finger was released). */
   .panel.has-custom-height {
     height: var(--sheet-h);
+    max-height: 78dvh;
   }
 
   .panel-handle {
@@ -1488,6 +1591,150 @@ summary:focus-visible,
 
   .viewport-hint {
     display: none; /* too long for a phone; the place button and handles are self-explanatory */
+  }
+}
+
+/* Very narrow phones: the place-mode snap group wraps under undo/redo instead of running under 匯出. */
+@media (max-width: 480px) {
+  .toolbar-groups {
+    flex-wrap: wrap;
+    row-gap: 6px;
+    overflow: visible;
+    padding-right: 0;
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .toolbar-export {
+    padding: 0 14px;
+  }
+}
+
+/* Stacked layout on short screens (system keyboard up, 200%+ zoom): the drawing keeps a usable minimum. */
+@media (max-width: 767px), (max-width: 1023px) and (orientation: portrait) {
+  .stage {
+    flex: 1 0 auto;
+    min-height: min(120px, 30dvh);
+  }
+
+  /* The sheet gives up height instead (its body scrolls), but always keeps its handle. */
+  .panel {
+    flex-shrink: 1;
+    min-height: 48px;
+  }
+}
+
+/* A very short drawing area cannot fit the zoom column: pinch / wheel zoom still works. */
+@container stage (max-height: 210px) {
+  .view-tools-zoom {
+    display: none;
+  }
+}
+
+/*
+ * Phones: 9 key columns are too narrow to tap (28–37px). The cursor/delete/enter block becomes a row on top,
+ * leaving 7 columns that reach ~44px.
+ */
+@media (max-width: 480px) {
+  .keypad {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .kbd-block--fn {
+    order: -1;
+    flex: 1 1 100%;
+    grid-template-columns: repeat(4, 1fr);
+    grid-template-rows: var(--tap);
+  }
+
+  .kbd-block--fn .kbd-key {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .kbd-block--symbols {
+    flex: 4 1 0;
+  }
+
+  .kbd-block--digits {
+    flex: 3 1 0;
+  }
+}
+
+/* Windows high contrast: keep button edges and the active state visible once system colours replace ours. */
+@media (forced-colors: active) {
+  .btn,
+  .btn-primary,
+  .vt-btn,
+  .panel-toggle,
+  .kbd-toggle,
+  .kbd-key,
+  .chip,
+  .place-btn {
+    border: 1px solid ButtonBorder;
+  }
+
+  .btn[aria-pressed='true'],
+  .vt-btn[aria-pressed='true'],
+  .vt-btn[aria-expanded='true'],
+  .place-btn.is-on,
+  .kbd-toggle[aria-expanded='true'],
+  .connect-plane[aria-pressed='true'] {
+    forced-color-adjust: none;
+    background: Highlight;
+    color: HighlightText;
+    border-color: Highlight;
+  }
+
+  .obj-row.is-selected {
+    outline: 2px solid Highlight;
+  }
+
+  .viewport:focus-visible,
+  .obj-row:focus-visible {
+    outline: 2px solid Highlight;
+  }
+}
+
+/* Dark high-contrast themes: dim the white drawing so it is not a glaring block next to the dark UI. */
+@media (forced-colors: active) and (prefers-color-scheme: dark) {
+  .viewport-canvas {
+    filter: invert(1) hue-rotate(180deg);
+  }
+}
+
+/* Printing (e.g. a worksheet): only the drawing, full page, without the editing UI. */
+@media print {
+  .toolbar,
+  .panel,
+  .kbd-dock,
+  .view-tools,
+  .viewport-tools,
+  .viewport-hint,
+  .viewport-toast,
+  .panel-toggle {
+    display: none !important;
+  }
+
+  html,
+  body,
+  #root,
+  .app {
+    height: auto;
+    overflow: visible;
+    background: #fff;
+  }
+
+  .workspace,
+  .stage {
+    display: block;
+    height: 95vh;
+    overflow: visible;
+  }
+
+  .viewport:focus-visible {
+    outline: none;
   }
 }
 

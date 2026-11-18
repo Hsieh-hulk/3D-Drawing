@@ -96,6 +96,13 @@ export const MinusIcon = () => (
   </svg>
 );
 
+/** Four corner brackets: fit everything into the view. */
+export const FitIcon = () => (
+  <svg {...common}>
+    <path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5" />
+  </svg>
+);
+
 export const DoubleChevronIcon = ({ left }: { left: boolean }) => (
   <svg {...common} style={{ transform: left ? undefined : 'rotate(180deg)' }}>
     <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />

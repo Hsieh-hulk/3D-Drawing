@@ -28,6 +28,7 @@ export function Viewport() {
       onSelect: (id) => store().select(id),
       onDragStart: () => store().beginDrag(),
       onDragMove: (id, pos) => store().movePointLive(id, pos),
+      onDragCancel: () => store().cancelDrag(),
       onPlace: (pos) => store().addPointAt(pos),
       onConnect: (a, b) => store().connectPoints(a, b),
       onFaceVertex: (id) => store().toggleFaceVertex(id),
@@ -46,6 +47,20 @@ export function Viewport() {
       controllerRef.current = null;
       if (viewportRegistry.current === controller) viewportRegistry.current = null;
     };
+  }, []);
+
+  // SceneController prevents default on pointerdown (so drags don't select text), which also keeps focus in
+  // a text field the student just used. Release it, or Ctrl+Z / Delete would still go to that field.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const onDown = () => {
+      const el = document.activeElement as HTMLElement | null;
+      if (!el || container.contains(el)) return;
+      if (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable) el.blur();
+    };
+    container.addEventListener('pointerdown', onDown, { capture: true });
+    return () => container.removeEventListener('pointerdown', onDown, { capture: true });
   }, []);
 
   useEffect(() => {
@@ -108,7 +123,22 @@ export function Viewport() {
       className="viewport"
       ref={containerRef}
       role="region"
-      aria-label={`3D 繪圖區，共 ${scene.objects.length} 個物件。拖曳旋轉視角，物件也可在物件清單中編輯。`}
+      tabIndex={0}
+      aria-label={`3D 繪圖區，共 ${scene.objects.length} 個物件。拖曳或按方向鍵旋轉視角，按 R 回到預設視角，物件也可在物件清單中編輯。`}
+      onKeyDown={(e) => {
+        // Only when the drawing itself has focus (not the tool buttons inside it).
+        if (e.target !== e.currentTarget || e.ctrlKey || e.metaKey || e.altKey) return;
+        const step = (e.shiftKey ? 15 : 5) * (Math.PI / 180);
+        const c = controllerRef.current;
+        if (!c) return;
+        if (e.key === 'ArrowLeft') c.rotateBy(-step, 0);
+        else if (e.key === 'ArrowRight') c.rotateBy(step, 0);
+        else if (e.key === 'ArrowUp') c.rotateBy(0, step);
+        else if (e.key === 'ArrowDown') c.rotateBy(0, -step);
+        else if (e.key === 'r' || e.key === 'R') useAppStore.getState().setPreset(useAppStore.getState().view.preset);
+        else return;
+        e.preventDefault();
+      }}
     >
       <div className="viewport-tools" role="group" aria-label="繪製工具">
         <button

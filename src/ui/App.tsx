@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { Viewport } from '../render3d/Viewport';
+import { viewportRegistry } from '../render3d/viewportRegistry';
+import { readStorage, writeStorage } from '../store/persistence';
 import { useAppStore } from '../store/useAppStore';
+import { confirmRemove } from './confirmRemove';
 import { DoubleChevronIcon } from './icons';
 import { ObjectPanel } from './ObjectPanel';
 import { Toolbar } from './Toolbar';
@@ -15,8 +18,15 @@ function typingInField(target: EventTarget | null): boolean {
 export function App() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A modal dialog (export) owns the keyboard: shortcuts must not edit the scene behind it.
+      if (document.querySelector('dialog[open]')) return;
       const s = useAppStore.getState();
       const mod = e.ctrlKey || e.metaKey;
+      // Escape / Ctrl+Z while still holding a dragged point: cancel the drag and put the point back.
+      if ((e.key === 'Escape' || (mod && e.key.toLowerCase() === 'z')) && viewportRegistry.current?.cancelDrag()) {
+        e.preventDefault();
+        return;
+      }
       if (mod && e.key.toLowerCase() === 'z' && !typingInField(e.target)) {
         e.preventDefault();
         if (e.shiftKey) s.redo();
@@ -26,8 +36,10 @@ export function App() {
         s.redo();
       } else if ((e.key === 'Delete' || e.key === 'Backspace') && s.selectedId && !typingInField(e.target)) {
         e.preventDefault();
-        s.removeObject(s.selectedId); // undoable, so no confirmation
-      } else if (e.key === 'Escape' && !typingInField(e.target) && !document.querySelector('dialog[open]')) {
+        const obj = s.scene.objects.find((o) => o.id === s.selectedId);
+        // Same confirmation as the trash button when dependents would be removed too.
+        if (obj && confirmRemove(s.scene, obj)) s.removeObject(obj.id);
+      } else if (e.key === 'Escape' && !typingInField(e.target)) {
         if (s.placeMode) s.togglePlaceMode();
         else s.select(null);
       }
@@ -36,20 +48,10 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  const [panelOpen, setPanelOpen] = useState(() => {
-    try {
-      return localStorage.getItem('panel.open') !== '0';
-    } catch {
-      return true;
-    }
-  });
+  const [panelOpen, setPanelOpen] = useState(() => readStorage('panel.open') !== '0');
   const togglePanel = () =>
     setPanelOpen((o) => {
-      try {
-        localStorage.setItem('panel.open', o ? '0' : '1');
-      } catch {
-        /* ignore */
-      }
+      writeStorage('panel.open', o ? '0' : '1');
       return !o;
     });
 

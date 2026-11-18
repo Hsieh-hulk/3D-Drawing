@@ -199,7 +199,62 @@ export function paintDrawing(p: Painter, drawing: Drawing, t: PxTransform, style
   }
 
   // 8. labels
-  for (const l of drawing.prims.filter((q): q is LabelPrim => q.type === 'label')) paintLabel(p, l, px(l.p), style.fontScale);
+  for (const { l, at } of placeLabels(p.measure.bind(p), drawing, px, style.fontScale)) paintLabel(p, l, at, style.fontScale);
+}
+
+type Box = { minX: number; minY: number; maxX: number; maxY: number };
+const boxesOverlap = (a: Box, b: Box) => a.minX < b.maxX && b.minX < a.maxX && a.minY < b.maxY && b.minY < a.maxY;
+
+function labelBox(measure: Painter['measure'], l: LabelPrim, at: Pt2, fs: number): Box {
+  const lay = layoutLabel(measure, l, at, fs);
+  return { minX: lay.left, maxX: lay.left + lay.totalWidth, minY: lay.y - lay.height / 2, maxY: lay.y + lay.height / 2 };
+}
+
+/**
+ * Light label layout so dense figures stay readable: point labels try a few positions around their point
+ * to avoid each other, and axis tick numbers (or "O") that would sit under a point or its label are
+ * dropped, e.g. B(2, 0, 0) on the x-axis tick "2" or a vertex at the origin.
+ */
+function placeLabels(measure: Painter['measure'], drawing: Drawing, px: (q: Pt2) => Pt2, fs: number): { l: LabelPrim; at: Pt2 }[] {
+  const labels = drawing.prims.filter((q): q is LabelPrim => q.type === 'label');
+  const dots: Box[] = drawing.prims
+    .filter((q): q is PointPrim => q.type === 'point')
+    .map((q) => {
+      const [x, y] = px(q.p);
+      return { minX: x - 5, maxX: x + 5, minY: y - 5, maxY: y + 5 };
+    });
+  const placed: Box[] = [];
+  const out: { l: LabelPrim; at: Pt2 }[] = [];
+  // Point and vector labels first: they carry the figure's meaning.
+  for (const l of labels) {
+    if (l.style !== 'point' && l.style !== 'vector') continue;
+    const at = px(l.p);
+    const [ox, oy] = l.offsetPx;
+    const candidates: LabelPrim[] =
+      l.style === 'point'
+        ? [l, { ...l, offsetPx: [-oy, ox] }, { ...l, offsetPx: [oy, -ox] }, { ...l, offsetPx: [-ox, -oy] }]
+        : [l];
+    const own = dots.filter((d) => Math.abs((d.minX + d.maxX) / 2 - at[0]) < 1 && Math.abs((d.minY + d.maxY) / 2 - at[1]) < 1);
+    const others = dots.filter((d) => !own.includes(d));
+    let best = candidates[0];
+    for (const c of candidates) {
+      const b = labelBox(measure, c, at, fs);
+      if (!placed.some((q) => boxesOverlap(q, b)) && !others.some((q) => boxesOverlap(q, b))) {
+        best = c;
+        break;
+      }
+    }
+    placed.push(labelBox(measure, best, at, fs));
+    out.push({ l: best, at });
+  }
+  const blockers = [...placed, ...dots];
+  for (const l of labels) {
+    if (l.style === 'point' || l.style === 'vector') continue;
+    const at = px(l.p);
+    if ((l.style === 'tick' || l.style === 'origin') && blockers.some((q) => boxesOverlap(q, labelBox(measure, l, at, fs)))) continue;
+    out.push({ l, at });
+  }
+  return out;
 }
 
 function paintLabel(p: Painter, l: LabelPrim, at: Pt2, fs: number): void {

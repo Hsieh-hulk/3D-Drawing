@@ -30,6 +30,8 @@ const EXPORT_PX_PER_UNIT = 60;
 const HANDLE_LEN_PX = 48;
 const TAP_SLOP_PX = 6;
 const DRAG_START_PX = 3;
+/** Touch grab radius around the already-selected point (larger than the 22 px used to pick a point). */
+const SELECTED_TOUCH_RADIUS_PX = 34;
 /** Zoom range of the interactive view (wide, Desmos-style: the axes rescale themselves). */
 const MIN_ZOOM = 0.02;
 const MAX_ZOOM = 500;
@@ -44,6 +46,8 @@ export interface InteractionCallbacks {
   /** Called once when a drag actually starts moving (one undo entry per drag). */
   onDragStart(): void;
   onDragMove(id: string, pos: Vec3): void;
+  /** A started drag was aborted (Escape / Ctrl+Z mid-drag): put the point back. */
+  onDragCancel(): void;
   /** Tap on empty space in place mode. */
   onPlace(pos: Vec3): void;
   /** Line tool: released a drag from one point onto another. */
@@ -173,6 +177,71 @@ export class SceneController {
 
   setRotateSpeed(speed: number): void {
     this.controls.rotateSpeed = speed;
+  }
+
+  /**
+   * Aborts a point drag (or a line-tool connection) still in progress, e.g. on Escape / Ctrl+Z before the
+   * pointer is released. Returns false when nothing was being dragged.
+   */
+  cancelDrag(): boolean {
+    const d = this.drag;
+    const l = this.link;
+    if (!d && !l) return false;
+    const id = d?.pointerId ?? l!.pointerId;
+    if (this.container.hasPointerCapture(id)) this.container.releasePointerCapture(id);
+    this.drag = null;
+    this.link = null;
+    this.dirty = true;
+    if (d?.moved) this.callbacks.onDragCancel();
+    return true;
+  }
+
+  /** Keyboard rotation (arrow keys on the focused drawing), in radians around the vertical axis and upward. */
+  rotateBy(dAzimuth: number, dPolar: number): void {
+    this.transition = null;
+    const target = this.controls.target;
+    const offset = this.camera.position.clone().sub(target);
+    // Spherical coordinates assume +y up; the world uses +z up.
+    const toYUp = new THREE.Quaternion().setFromUnitVectors(this.camera.up, new THREE.Vector3(0, 1, 0));
+    offset.applyQuaternion(toYUp);
+    const s = new THREE.Spherical().setFromVector3(offset);
+    s.theta += dAzimuth;
+    s.phi = Math.min(Math.PI - 0.01, Math.max(0.01, s.phi - dPolar));
+    offset.setFromSpherical(s).applyQuaternion(toYUp.invert());
+    this.camera.position.copy(target).add(offset);
+    this.camera.lookAt(target);
+    this.controls.update();
+    this.dirty = true;
+  }
+
+  /**
+   * Pans and zooms (keeping the viewing direction) so every given point is on screen with a margin,
+   * e.g. to find an object placed far outside the current view.
+   */
+  fitTo(points: Vec3[]): void {
+    if (points.length === 0 || this.width === 0 || this.height === 0) return;
+    this.transition = null;
+    const cam = this.getViewCamera();
+    const pts = points.map((p) => projectPoint(p, cam));
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    const [minX, maxX, minY, maxY] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    // Pan: move target and camera together so the box centre lands in the middle of the screen.
+    const cx = (minX + maxX) / 2;
+    const cy = (minY + maxY) / 2;
+    const now = this.transform(cam).origin;
+    const shift = new THREE.Vector3(...cam.right).multiplyScalar(cx - now[0]).add(new THREE.Vector3(...cam.up).multiplyScalar(cy - now[1]));
+    this.controls.target.add(shift);
+    this.camera.position.add(shift);
+    // Zoom: the box (at least 2 units) plus ~20% margin fills the smaller screen dimension.
+    const w = Math.max(maxX - minX, 2) * 1.2;
+    const h = Math.max(maxY - minY, 2) * 1.2;
+    const scaleNeeded = Math.min(this.width / w, this.height / h);
+    const zoom = (this.camera.zoom * scaleNeeded) / this.pxPerUnit();
+    this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+    this.camera.updateProjectionMatrix();
+    this.controls.update();
+    this.dirty = true;
   }
 
   /** Proportional zoom about the screen centre (used by the on-screen +/- buttons). */
@@ -414,9 +483,13 @@ export class SceneController {
       return;
     }
 
-    // 2. A point: select it and drag it within a coordinate plane.
+    // 2. A point: select it and drag it within a coordinate plane. On touch, the selected point gets a larger
+    // grab radius so a finger that lands a little off drags it instead of rotating the view.
     if (this.drawing) {
-      const hit = hitTest(this.drawing, this.transform(), x, y, touch ? 22 : 12);
+      const sel = touch ? this.draggableSelected() : null;
+      const selPx = sel ? toPx(this.transform(), projectPoint(sel.pos, this.getViewCamera())) : null;
+      const grabSelected = sel && selPx && Math.hypot(selPx[0] - x, selPx[1] - y) <= SELECTED_TOUCH_RADIUS_PX;
+      const hit = grabSelected ? { kind: 'point' as const, id: sel.id } : hitTest(this.drawing, this.transform(), x, y, touch ? 22 : 12);
       if (hit?.kind === 'point') {
         const p = findPoint(this.scene, hit.id);
         this.callbacks.onSelect(hit.id);

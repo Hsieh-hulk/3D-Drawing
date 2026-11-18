@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { downloadBlob } from '../export/exporters';
 import { serializeProject } from '../model/project';
 import { useAppStore } from '../store/useAppStore';
@@ -21,14 +21,32 @@ export function ObjectPanel() {
   const clearScene = useAppStore((s) => s.clearScene);
   const loadProjectText = useAppStore((s) => s.loadProjectText);
   const fileRef = useRef<HTMLInputElement>(null);
-  const [fileMsg, setFileMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [fileMsg, setFileMsgState] = useState<{ ok: boolean; text: string } | null>(null);
+  // The open/save message belongs to the drawing it was shown for: the next edit clears it.
+  const scene = useAppStore((s) => s.scene);
+  const msgScene = useRef<unknown>(null);
+  const setFileMsg = (m: { ok: boolean; text: string } | null) => {
+    msgScene.current = useAppStore.getState().scene;
+    setFileMsgState(m);
+  };
+  useEffect(() => {
+    if (scene !== msgScene.current) setFileMsgState(null);
+  }, [scene]);
+  const storageStatus = useAppStore((s) => s.storageStatus);
+  const externalChange = useAppStore((s) => s.externalChange);
+  const reloadFromStorage = useAppStore((s) => s.reloadFromStorage);
+  const keepThisTab = useAppStore((s) => s.keepThisTab);
+  const storageNotice = useAppStore((s) => s.storageNotice);
+  const dismissStorageNotice = useAppStore((s) => s.dismissStorageNotice);
 
   // ---- draggable bottom sheet: drag the handle to any height between "collapsed" and the CSS max ----
   const panelRef = useRef<HTMLElement>(null);
   const [sheetH, setSheetH] = useState<number | null>(null);
   const dragRef = useRef<{ id: number; startY: number; startH: number; moved: boolean } | null>(null);
   const HANDLE_H = 48;
-  const maxSheetH = () => window.innerHeight * (window.innerWidth < 768 ? 0.5 : 0.44); // same limits as styles.css
+  // Dragging the handle may raise the sheet well above its default height (long object lists); the drawing
+  // keeps a strip at the top. Same limit as .panel.has-custom-height in styles.css.
+  const maxSheetH = () => window.innerHeight * 0.78;
 
   const onHandleDown = (e: React.PointerEvent<HTMLButtonElement>) => {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
@@ -153,7 +171,36 @@ export function ObjectPanel() {
             {fileMsg.text}
           </p>
         )}
-        <p className="autosave-note">會自動存在這台裝置的瀏覽器中；要換裝置請用「儲存」。</p>
+        {storageNotice && (
+          <div className="tab-conflict" role="alert">
+            <p>{storageNotice}</p>
+            <div className="tab-conflict-actions">
+              <button type="button" className="btn btn-small btn-ghost" onClick={dismissStorageNotice}>
+                知道了
+              </button>
+            </div>
+          </div>
+        )}
+        {externalChange && (
+          <div className="tab-conflict" role="alert">
+            <p>另一個分頁更新了這份作品，這個分頁已暫停自動儲存。</p>
+            <div className="tab-conflict-actions">
+              <button type="button" className="btn btn-small btn-primary" onClick={reloadFromStorage}>
+                載入最新
+              </button>
+              <button type="button" className="btn btn-small btn-ghost" onClick={keepThisTab}>
+                保留目前分頁
+              </button>
+            </div>
+          </div>
+        )}
+        {storageStatus === 'ok' ? (
+          <p className="autosave-note">會自動存在這台裝置的瀏覽器中；要換裝置請用「儲存」。</p>
+        ) : (
+          <p className="autosave-note is-error" role="alert">
+            無法自動儲存（瀏覽器封鎖儲存或空間已滿），請按「儲存」下載 .json 備份。
+          </p>
+        )}
         <ObjectList />
       </div>
     </aside>

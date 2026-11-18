@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { formatNumber } from '../model/expr';
 import {
   FILL_PALETTE,
-  dependentsOf,
   equations,
   findPoint,
   objectName,
@@ -23,6 +22,7 @@ import {
   type SolidObj,
 } from '../model/scene';
 import { useAppStore, type ActionResult } from '../store/useAppStore';
+import { confirmRemove } from './confirmRemove';
 import { EyeIcon, EyeOffIcon, GuidesIcon, TrashIcon } from './icons';
 
 /** Text field that commits on blur/Enter, keeps invalid drafts visible with an error, and reverts on Escape. */
@@ -32,8 +32,10 @@ function CommitField(props: {
   className?: string;
   onCommit: (v: string) => ActionResult;
   onError: (msg: string) => void;
+  /** Put the last valid value back when a commit fails (names: never show two points with the same name). */
+  revertOnError?: boolean;
 }) {
-  const { value, label, className, onCommit, onError } = props;
+  const { value, label, className, onCommit, onError, revertOnError } = props;
   const [draft, setDraft] = useState(value);
   const [invalid, setInvalid] = useState(false);
   useEffect(() => {
@@ -44,6 +46,12 @@ function CommitField(props: {
   const commit = () => {
     if (draft === value) return;
     const r = onCommit(draft);
+    if (!r.ok && revertOnError) {
+      setDraft(value);
+      setInvalid(false);
+      onError(`${r.error}（已還原為 ${value}）`);
+      return;
+    }
     setInvalid(!r.ok);
     onError(r.ok ? '' : r.error);
   };
@@ -52,6 +60,8 @@ function CommitField(props: {
     <input
       className={`field ${className ?? ''}`}
       value={draft}
+      // Long expressions are cut off by the narrow field: the tooltip shows all of it.
+      title={draft}
       aria-label={label}
       aria-invalid={invalid}
       autoCapitalize="off"
@@ -78,16 +88,7 @@ function RowActions({ obj }: { obj: SceneObject }) {
   const name = objectName(scene, obj);
 
   const remove = () => {
-    if (obj.kind === 'point') {
-      const deps = dependentsOf(scene, obj.id);
-      if (deps.length > 0 && !window.confirm(`刪除${name}也會一併刪除以它建立的 ${deps.length} 個物件，確定嗎？`)) {
-        return;
-      }
-    }
-    if (obj.kind === 'solid' && !window.confirm(`刪除${name}及其頂點（仍被其他物件使用的頂點會保留），確定嗎？`)) {
-      return;
-    }
-    removeObject(obj.id);
+    if (confirmRemove(scene, obj)) removeObject(obj.id);
   };
 
   return (
@@ -154,10 +155,18 @@ function Row({ obj, children }: { obj: SceneObject; children: ReactNode }) {
     <li
       ref={ref}
       className={`obj-row${selected ? ' is-selected' : ''}${obj.visible ? '' : ' is-hidden'}`}
+      // Keyboard users select a row with Tab + Enter/Space (then Delete removes it, like a click).
+      tabIndex={0}
       onClick={(e) => {
         // Editing a field selects the row but never toggles it off.
-        const fromControl = (e.target as HTMLElement).closest('input, select, button');
+        // The colour dot of rows with colour settings opens them the same way.
+        const fromControl = (e.target as HTMLElement).closest('input, select, button, .swatch--editable');
         select(fromControl ? obj.id : selected ? null : obj.id);
+      }}
+      onKeyDown={(e) => {
+        if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) return;
+        e.preventDefault();
+        select(selected ? null : obj.id);
       }}
     >
       {children}
@@ -168,7 +177,10 @@ function Row({ obj, children }: { obj: SceneObject; children: ReactNode }) {
 function PointRow({ p }: { p: PointObj }) {
   const updatePointCoord = useAppStore((s) => s.updatePointCoord);
   const renamePoint = useAppStore((s) => s.renamePoint);
-  const [error, setError] = useState('');
+  // Name and coordinate errors are kept apart so one never hides the other.
+  const [nameError, setNameError] = useState('');
+  const [coordErrors, setCoordErrors] = useState<Record<string, string>>({});
+  const errors = [nameError, ...(['x', 'y', 'z'] as const).map((a) => coordErrors[a]).filter(Boolean)].filter(Boolean);
   return (
     <Row obj={p}>
       <div className="row-head">
@@ -178,7 +190,8 @@ function PointRow({ p }: { p: PointObj }) {
           value={p.name}
           label={`點 ${p.name} 的名稱`}
           onCommit={(v) => renamePoint(p.id, v)}
-          onError={setError}
+          onError={setNameError}
+          revertOnError
         />
         <RowActions obj={p} />
       </div>
@@ -191,16 +204,16 @@ function PointRow({ p }: { p: PointObj }) {
               value={p.coords[i].src}
               label={`點 ${p.name} 的 ${axis} 座標`}
               onCommit={(v) => updatePointCoord(p.id, i as 0 | 1 | 2, v)}
-              onError={(msg) => setError(msg ? `${axis} 座標：${msg}` : '')}
+              onError={(msg) => setCoordErrors((e) => ({ ...e, [axis]: msg ? `${axis} 座標：${msg}` : '' }))}
             />
           </label>
         ))}
       </div>
-      {error && (
-        <p className="feedback is-error" role="alert">
-          {error}
+      {errors.map((msg) => (
+        <p key={msg} className="feedback is-error" role="alert">
+          {msg}
         </p>
-      )}
+      ))}
     </Row>
   );
 }
@@ -248,7 +261,7 @@ function PlaneRow({ pl }: { pl: PlaneObj }) {
   return (
     <Row obj={pl}>
       <div className="row-head">
-        <span className="swatch swatch--square" style={{ background: pl.color, opacity: 0.6 }} aria-hidden="true" />
+        <span className="swatch swatch--square swatch--editable" style={{ background: pl.color, opacity: 0.6 }} title="點一下設定顏色" aria-hidden="true" />
         <span className="obj-label">平面 {label}</span>
         <RowActions obj={pl} />
       </div>
@@ -267,8 +280,9 @@ function EquationRow({ eq }: { eq: EquationObj }) {
     <Row obj={eq}>
       <div className="row-head">
         <span
-          className={`swatch${eq.extend3d ? ' swatch--square' : ''}`}
+          className={`swatch swatch--editable${eq.extend3d ? ' swatch--square' : ''}`}
           style={{ background: eq.color, opacity: eq.extend3d ? 0.6 : 1 }}
+          title="點一下設定顏色"
           aria-hidden="true"
         />
         <CommitField
@@ -277,6 +291,7 @@ function EquationRow({ eq }: { eq: EquationObj }) {
           label={`方程式 ${eq.source}`}
           onCommit={(v) => updateEquationSource(eq.id, v)}
           onError={setError}
+          revertOnError
         />
         <RowActions obj={eq} />
       </div>
@@ -304,7 +319,7 @@ function SolidRow({ s }: { s: SolidObj }) {
   return (
     <Row obj={s}>
       <div className="row-head">
-        <span className="swatch swatch--square" style={{ background: s.color }} aria-hidden="true" />
+        <span className="swatch swatch--square swatch--editable" style={{ background: s.color }} title="點一下設定面的顏色" aria-hidden="true" />
         <span className="obj-label">
           {solidTitle(scene, s)}
           {colored > 0 && <span className="obj-meta">　{colored} 面上色</span>}

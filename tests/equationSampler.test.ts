@@ -96,7 +96,40 @@ describe('equation objects', () => {
 
     const bad = JSON.parse(text);
     bad.scene.objects[0].source = 'x^2 + y^2 = 4';
+    // With a valid object beside it, the invalid equation is dropped and counted.
+    bad.scene.objects.push({ id: 'p1', kind: 'point', name: 'A', color: '#1d232b', visible: true, coords: [{ src: '1', value: 1 }, { src: '0', value: 0 }, { src: '0', value: 0 }] });
     const r2 = parseProject(JSON.stringify(bad));
     expect(r2.ok && r2.dropped).toBe(1);
+    // Nothing usable at all is refused instead of opening an empty drawing (QA-38).
+    bad.scene.objects.pop();
+    expect(parseProject(JSON.stringify(bad)).ok).toBe(false);
+  });
+});
+
+describe('boundary points (QA-26 / QA-20)', () => {
+  const ends = (lines: readonly (readonly (readonly number[])[])[]) => lines.flatMap((l) => [l[0], l[l.length - 1]]);
+
+  it('reaches the ends of the domain of sqrt(1 - x^2) and asin(x)', () => {
+    const semi = sampleEquation(eq('y = sqrt(1 - x^2)'), 5);
+    expect(semi).toHaveLength(1);
+    const [first, last] = [semi[0][0], semi[0][semi[0].length - 1]];
+    expect(first[0]).toBeCloseTo(-1, 6);
+    expect(last[0]).toBeCloseTo(1, 6);
+    expect(Math.abs(last[1])).toBeLessThan(1e-3);
+    const asin = sampleEquation(eq('y = asin(x)'), 5)[0];
+    expect(asin[0][1]).toBeCloseTo(-Math.PI / 2, 3);
+    expect(asin[asin.length - 1][1]).toBeCloseTo(Math.PI / 2, 3);
+  });
+
+  it('ends a curve exactly on the value limit (no steps on surface edges)', () => {
+    const lines = sampleEquation(eq('y = x^2'), 5, undefined, 5);
+    for (const p of ends(lines)) expect(p[1]).toBeCloseTo(5, 9);
+    expect(lines[0][0][0]).toBeCloseTo(-Math.sqrt(5), 6);
+  });
+
+  it('still splits tan(x) at its asymptotes', () => {
+    const lines = sampleEquation(eq('y = tan(x)'), 5, undefined, 5);
+    expect(lines.length).toBeGreaterThanOrEqual(4);
+    for (const l of lines) for (let i = 1; i < l.length; i++) expect(Math.abs(l[i][1] - l[i - 1][1])).toBeLessThan(5);
   });
 });
