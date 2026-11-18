@@ -13,7 +13,19 @@ import { DEFAULT_STYLE, paintDrawing, toPx, type PxTransform } from '../render2d
 import { axisDragDelta, choosePlaneAxis, hitTest, screenToDrawing, snapValue, solveOnPlane } from './interaction';
 
 const CAMERA_DISTANCE = 30;
-const TRANSITION_MS = 350;
+const TRANSITION_MS = 480;
+
+/** Camera position expressed as polar angle from +z and azimuth around z (z-up world). */
+interface OrbitAngles {
+  polar: number;
+  azimuth: number;
+}
+
+function toAngles(v: THREE.Vector3): OrbitAngles {
+  return { polar: Math.acos(Math.min(1, Math.max(-1, v.z / v.length()))), azimuth: Math.atan2(v.y, v.x) };
+}
+
+const easeInOutCubic = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const EXPORT_PX_PER_UNIT = 60;
 const HANDLE_LEN_PX = 48;
 const TAP_SLOP_PX = 6;
@@ -75,7 +87,7 @@ export class SceneController {
   private readonly controls: OrbitControls;
   private readonly resizeObserver: ResizeObserver;
   private frameId = 0;
-  private transition: { from: THREE.Vector3; to: THREE.Vector3; start: number } | null = null;
+  private transition: { from: OrbitAngles; to: OrbitAngles; start: number } | null = null;
   private dirty = true;
   private width = 0;
   private height = 0;
@@ -202,7 +214,7 @@ export class SceneController {
       this.dirty = true;
       return;
     }
-    this.transition = { from: this.camera.position.clone(), to, start: performance.now() };
+    this.transition = { from: toAngles(this.camera.position), to: toAngles(to), start: performance.now() };
   }
 
   /** Camera basis (right / up / forward) of the current view, used by the projection and exporters. */
@@ -742,10 +754,21 @@ export class SceneController {
     this.frameId = requestAnimationFrame(this.loop);
     if (this.transition) {
       const tt = Math.min((performance.now() - this.transition.start) / TRANSITION_MS, 1);
-      const eased = 1 - Math.pow(1 - tt, 3);
-      const p = this.transition.from.clone().lerp(this.transition.to, eased);
-      p.setLength(CAMERA_DISTANCE); // stay on the sphere so the view never clips
-      this.camera.position.copy(p);
+      const eased = easeInOutCubic(tt);
+      const { from, to } = this.transition;
+      // Interpolate polar and azimuth separately (shortest way around) so the view tilts and turns
+      // together; a straight lerp of positions keeps the old azimuth until the very last frames
+      // near the top-view pole, then snaps the whole drawing around.
+      let dAz = to.azimuth - from.azimuth;
+      dAz -= Math.round(dAz / (2 * Math.PI)) * 2 * Math.PI;
+      const polar = from.polar + (to.polar - from.polar) * eased;
+      const az = from.azimuth + dAz * eased;
+      const s = Math.sin(polar);
+      this.camera.position.set(
+        CAMERA_DISTANCE * s * Math.cos(az),
+        CAMERA_DISTANCE * s * Math.sin(az),
+        CAMERA_DISTANCE * Math.cos(polar),
+      );
       if (tt >= 1) this.transition = null;
       this.dirty = true;
     }

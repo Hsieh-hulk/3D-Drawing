@@ -67,16 +67,20 @@ export const CubeIcon = () => (
   </svg>
 );
 
+/** Same cube as CubeIcon with the top face filled, so it reads as "look down from above". */
 export const TopViewIcon = () => (
   <svg {...common}>
-    <rect x="4" y="4" width="16" height="16" rx="1" />
-    <path d="M4 12h16M12 4v16" strokeOpacity="0.55" />
+    <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
+    <path d="M4 7.5l8 4.5 8-4.5M12 12v9" strokeOpacity="0.5" />
+    <path d="M12 3l8 4.5-8 4.5-8-4.5L12 3z" fill="currentColor" />
   </svg>
 );
 
 export const WrenchIcon = () => (
   <svg {...common}>
-    <path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3l9.4-9.4a4 4 0 0 0-2-2z" />
+    <path d="M4 7h9M17 7h3M4 17h3M11 17h9" />
+    <circle cx="15" cy="7" r="2.2" />
+    <circle cx="9" cy="17" r="2.2" />
   </svg>
 );
 
