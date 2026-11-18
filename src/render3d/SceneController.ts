@@ -163,6 +163,13 @@ export class SceneController {
     this.controls.rotateSpeed = speed;
   }
 
+  /** Proportional zoom about the screen centre (used by the on-screen +/- buttons). */
+  zoomBy(factor: number): void {
+    this.camera.zoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, this.camera.zoom * factor));
+    this.camera.updateProjectionMatrix();
+    this.dirty = true;
+  }
+
   setPlaceMode(on: boolean): void {
     this.placeMode = on;
     this.container.classList.toggle('is-placing', on);

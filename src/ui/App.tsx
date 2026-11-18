@@ -1,8 +1,10 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Viewport } from '../render3d/Viewport';
 import { useAppStore } from '../store/useAppStore';
+import { DoubleChevronIcon } from './icons';
 import { ObjectPanel } from './ObjectPanel';
 import { Toolbar } from './Toolbar';
+import { ViewTools } from './ViewTools';
 
 /** True when the keyboard is busy with a text field (shortcuts must not steal its keys). */
 function typingInField(target: EventTarget | null): boolean {
@@ -34,12 +36,40 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  const [panelOpen, setPanelOpen] = useState(() => {
+    try {
+      return localStorage.getItem('panel.open') !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const togglePanel = () =>
+    setPanelOpen((o) => {
+      try {
+        localStorage.setItem('panel.open', o ? '0' : '1');
+      } catch {
+        /* ignore */
+      }
+      return !o;
+    });
+
   return (
     <div className="app">
       <Toolbar />
-      <div className="workspace">
+      <div className={`workspace${panelOpen ? '' : ' is-panel-closed'}`}>
         <main className="stage">
           <Viewport />
+          <button
+            type="button"
+            className="vt-btn panel-toggle"
+            aria-expanded={panelOpen}
+            aria-label={panelOpen ? '收合輸入區' : '展開輸入區'}
+            title={panelOpen ? '收合輸入區' : '展開輸入區'}
+            onClick={togglePanel}
+          >
+            <DoubleChevronIcon left={panelOpen} />
+          </button>
+          <ViewTools />
         </main>
         <ObjectPanel />
       </div>

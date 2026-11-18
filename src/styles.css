@@ -84,7 +84,8 @@ body {
   align-items: center;
   gap: 12px;
   flex-wrap: nowrap;
-  padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  /* Standalone (home-screen) mode draws the status bar over the page: keep the toolbar below it on an opaque background. */
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }
@@ -890,6 +891,124 @@ body {
   gap: 2px;
 }
 
+/* ---------- Floating view tools (top-right of the drawing) ---------- */
+.view-tools {
+  position: absolute;
+  top: 12px;
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.view-tools-row {
+  display: flex;
+  gap: 8px;
+}
+
+.view-tools-group {
+  display: flex;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: #2b3036;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+}
+
+.view-tools-zoom {
+  flex-direction: column;
+}
+
+.vt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--tap);
+  height: var(--tap);
+  padding: 0;
+  border: 0;
+  background: #2b3036;
+  color: #fff;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.vt-btn:hover {
+  background: #3a4048;
+}
+
+.vt-btn[aria-pressed='true'],
+.vt-btn[aria-expanded='true'] {
+  background: var(--accent);
+}
+
+.vt-btn:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: -3px;
+}
+
+.vt-btn--solo {
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+}
+
+.view-tools-zoom .vt-btn + .vt-btn {
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.panel-toggle {
+  position: absolute;
+  /* Edge tab, vertically centred, so it never covers the point/line/face tools at the top-left. */
+  top: 50%;
+  left: 0;
+  z-index: 5;
+  width: 24px;
+  height: 64px;
+  margin-top: -32px;
+  border-radius: 0 var(--radius) var(--radius) 0;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.25);
+}
+
+.workspace.is-panel-closed .panel {
+  display: none;
+}
+
+.settings-popover {
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px 14px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.22);
+}
+
+.settings-title {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--text-muted);
+}
+
+.settings-title:not(:first-child) {
+  margin-top: 14px;
+}
+
+.segmented--wrap {
+  flex-wrap: wrap;
+}
+
+.settings-popover .rotate-speed {
+  display: flex;
+  align-items: center;
+}
+
+.settings-popover .rotate-speed-input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+}
+
 .autosave-note {
   margin: 0 0 10px;
   font-size: 12px;
@@ -1199,6 +1318,15 @@ summary:focus-visible,
   .panel.is-collapsed .panel-handle {
     border-bottom: 0;
     padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  /* Stacked layout already has its own bottom-sheet toggle. */
+  .panel-toggle {
+    display: none;
+  }
+
+  .workspace.is-panel-closed .panel {
+    display: flex;
   }
 }
 
