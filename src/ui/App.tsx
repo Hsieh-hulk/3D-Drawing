@@ -73,6 +73,8 @@ export function App() {
         </main>
         <ObjectPanel />
       </div>
+      {/* Bottom dock: QuickInput portals its keyboard toggle and keyboard here. */}
+      <div className="kbd-dock" id="kbd-dock" />
     </div>
   );
 }

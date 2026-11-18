@@ -1,4 +1,5 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { nextPointName } from '../model/scene';
 import { useAppStore } from '../store/useAppStore';
 import { applyKey, type KeypadAction } from './keypadEdit';
@@ -9,13 +10,28 @@ const EXAMPLES = ['A(1, 2, 3)', 'B(0, √3, 1/2)', 'u = (1, -1, 2)', 'AB', '線�
 const SYMBOLS = ['(', ')', ',', '=', '-', '/', '√', 'π'];
 const MODE_KEY = 'quickInput.keypadMode';
 
+/** The on-screen keyboard starts collapsed (Desmos-style); only an explicit 'keypad' choice reopens it. */
 function loadKeypadMode(): boolean {
   try {
-    return localStorage.getItem(MODE_KEY) !== 'system';
+    return localStorage.getItem(MODE_KEY) === 'keypad';
   } catch {
-    return true;
+    return false;
   }
 }
+
+/** Small keyboard glyph for the toggle button. */
+const KeyboardIcon = () => (
+  <svg width="26" height="18" viewBox="0 0 26 18" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+    <rect x="1" y="1" width="24" height="16" rx="2.5" />
+    <path d="M5 5.5h1.5M9.5 5.5H11M14.5 5.5H16M19.5 5.5H21M5 9h1.5M9.5 9H11M14.5 9H16M19.5 9H21M7.5 13h11" strokeLinecap="round" />
+  </svg>
+);
+
+const TriangleIcon = ({ up }: { up: boolean }) => (
+  <svg width="12" height="8" viewBox="0 0 12 8" fill="currentColor" aria-hidden="true">
+    <path d={up ? 'M6 0 12 8H0z' : 'M6 8 0 0h12z'} />
+  </svg>
+);
 
 export function QuickInput() {
   const runCommand = useAppStore((s) => s.runCommand);
@@ -24,6 +40,9 @@ export function QuickInput() {
   const [keypad, setKeypad] = useState(loadKeypadMode);
   const [feedback, setFeedback] = useState<{ ok: boolean; text: string } | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // The toggle and the keyboard live in a dock mounted at the bottom of <App>, so they span the whole window.
+  const [dock, setDock] = useState<HTMLElement | null>(null);
+  useEffect(() => setDock(document.getElementById('kbd-dock')), []);
 
   const submit = () => {
     const r = runCommand(text);
@@ -92,19 +111,32 @@ export function QuickInput() {
         </button>
       </form>
 
-      <button
-        type="button"
-        className="btn btn-small btn-ghost keypad-toggle"
-        onPointerDown={(e) => e.preventDefault()}
-        onClick={toggleMode}
-        aria-pressed={keypad}
-      >
-        {keypad ? '改用系統鍵盤（可打中文指令）' : '改用螢幕數字鍵盤'}
-      </button>
+      {dock &&
+        createPortal(
+          <>
+            <button
+              type="button"
+              className="kbd-toggle"
+              onPointerDown={(e) => e.preventDefault()}
+              onClick={toggleMode}
+              aria-expanded={keypad}
+              aria-controls="kbd-panel"
+              aria-label={keypad ? '收起螢幕鍵盤（改用系統鍵盤）' : '展開螢幕鍵盤'}
+              title={keypad ? '收起螢幕鍵盤' : '展開螢幕鍵盤'}
+            >
+              <KeyboardIcon />
+              <TriangleIcon up={!keypad} />
+            </button>
+            {keypad && (
+              <div className="kbd-panel" id="kbd-panel">
+                <NumericKeypad nextName={nextPointName(scene)} onKey={edit} onEnter={submit} />
+              </div>
+            )}
+          </>,
+          dock,
+        )}
 
-      {keypad ? (
-        <NumericKeypad nextName={nextPointName(scene)} onKey={edit} />
-      ) : (
+      {!keypad && (
         <div className="symbol-row" role="group" aria-label="插入符號">
           {SYMBOLS.map((s) => (
             <button
