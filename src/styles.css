@@ -994,8 +994,27 @@ body {
   margin-top: 14px;
 }
 
+/* Equal-size toggle tiles in a 2x2 grid (no shared outer border / divider lines). */
 .segmented--wrap {
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+  border: 0;
+  border-radius: 0;
+  overflow: visible;
+}
+
+.segmented--wrap .btn {
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  white-space: nowrap;
+}
+
+.segmented--wrap .btn[aria-pressed='true'] {
+  border-color: var(--accent);
 }
 
 .settings-popover .rotate-speed {
