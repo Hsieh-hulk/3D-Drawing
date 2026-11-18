@@ -84,7 +84,8 @@ body {
   align-items: center;
   gap: 12px;
   flex-wrap: nowrap;
-  padding: 8px max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
+  /* Standalone (home-screen) mode draws the status bar over the page: keep the toolbar below it on an opaque background. */
+  padding: max(8px, env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left));
   background: var(--surface);
   border-bottom: 1px solid var(--border);
 }

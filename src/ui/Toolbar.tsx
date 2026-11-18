@@ -1,12 +1,11 @@
 import { useRef, useState } from 'react';
-import type { ViewPreset, ViewSettings } from '../model/types';
+import type { ViewSettings } from '../model/types';
 import { VIEW_PRESET_LABELS } from '../model/viewPresets';
 import { ROTATE_SPEED_MAX, ROTATE_SPEED_MIN, ROTATE_SPEED_STEP } from '../store/persistence';
 import { useAppStore } from '../store/useAppStore';
 import { ExportDialog } from './ExportDialog';
 import { RedoIcon, UndoIcon } from './icons';
 
-const PRESETS: ViewPreset[] = ['textbook', 'front', 'right', 'top'];
 const SNAPS: { value: ViewSettings['snap']; label: string }[] = [
   { value: 1, label: '1' },
   { value: 0.5, label: '0.5' },
@@ -52,11 +51,9 @@ export function Toolbar() {
           </button>
         </div>
         <div className="segmented" role="group" aria-label="視角">
-          {PRESETS.map((p) => (
-            <button key={p} type="button" className="btn" aria-pressed={view.preset === p} onClick={() => setPreset(p)}>
-              {VIEW_PRESET_LABELS[p]}
-            </button>
-          ))}
+          <button type="button" className="btn" aria-pressed={view.preset === 'textbook'} onClick={() => setPreset('textbook')}>
+            {VIEW_PRESET_LABELS.textbook}
+          </button>
         </div>
         <div className="segmented" role="group" aria-label="顯示">
           <button type="button" className="btn" aria-pressed={view.showGrid} onClick={toggleGrid}>
