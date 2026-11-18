@@ -60,6 +60,44 @@ export const RedoIcon = () => (
   </svg>
 );
 
+export const CubeIcon = () => (
+  <svg {...common}>
+    <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" />
+    <path d="M4 7.5l8 4.5 8-4.5M12 12v9" />
+  </svg>
+);
+
+export const TopViewIcon = () => (
+  <svg {...common}>
+    <rect x="4" y="4" width="16" height="16" rx="1" />
+    <path d="M4 12h16M12 4v16" strokeOpacity="0.55" />
+  </svg>
+);
+
+export const WrenchIcon = () => (
+  <svg {...common}>
+    <path d="M14.7 6.3a4 4 0 0 0 5 5l-9.4 9.4a2.1 2.1 0 0 1-3-3l9.4-9.4a4 4 0 0 0-2-2z" />
+  </svg>
+);
+
+export const PlusIcon = () => (
+  <svg {...common} strokeWidth={2.5}>
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
+
+export const MinusIcon = () => (
+  <svg {...common} strokeWidth={2.5}>
+    <path d="M5 12h14" />
+  </svg>
+);
+
+export const DoubleChevronIcon = ({ left }: { left: boolean }) => (
+  <svg {...common} style={{ transform: left ? undefined : 'rotate(180deg)' }}>
+    <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />
+  </svg>
+);
+
 export const TrashIcon = () => (
   <svg {...common}>
     <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
