@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { DEFAULT_EXPORT_OPTIONS, type ExportOptions } from '../export/frame';
 import { addPlane, addSegment, runCommand } from '../model/commands';
-import { evaluate, formatNumber, toExactText } from '../model/expr';
+import { evaluate, formatNumber, normalizeInput, parseEquation, toExactText } from '../model/expr';
 import { parseProject } from '../model/project';
 import {
   EMPTY_SCENE,
@@ -86,6 +86,9 @@ interface AppState {
   togglePointGuides: (id: string) => void;
   addSolid: (template: SolidTemplate, params: Record<string, number>) => ActionResult;
   setSegmentInfinite: (id: string, infinite: boolean) => void;
+  /** Replaces an equation's text (validated first). */
+  updateEquationSource: (id: string, src: string) => ActionResult;
+  setEquationExtend: (id: string, extend3d: boolean) => void;
   removeObject: (id: string) => void;
   clearScene: () => void;
   select: (id: string | null) => void;
@@ -259,6 +262,17 @@ export const useAppStore = create<AppState>((set, get) => {
 
     setSegmentInfinite: (id, infinite) =>
       mapObjects((o) => (o.id === id && o.kind === 'segment' ? { ...o, infinite } : o)),
+
+    updateEquationSource: (id, src) => {
+      const text = normalizeInput(src).trim();
+      const r = parseEquation(text);
+      if (!r.ok) return r;
+      mapObjects((o) => (o.id === id && o.kind === 'equation' ? { ...o, source: text } : o));
+      return { ok: true };
+    },
+
+    setEquationExtend: (id, extend3d) =>
+      mapObjects((o) => (o.id === id && o.kind === 'equation' ? { ...o, extend3d } : o)),
 
     removeObject: (id) => {
       const next = removeObject(get().scene, id);

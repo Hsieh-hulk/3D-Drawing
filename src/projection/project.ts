@@ -1,7 +1,9 @@
-import { prettyExpr } from '../model/expr';
+import { parseEquation, prettyExpr } from '../model/expr';
+import { extrudeAlongZ, sampleEquation, simplifyPolyline } from '../model/equationSampler';
 import { clipLineToCube } from '../model/geometry';
 import {
   coordsValue,
+  equations,
   planes,
   pointPositions,
   points,
@@ -64,6 +66,17 @@ export function sceneOccluders(scene: Scene, cam: ViewCamera): OccluderSet {
 
 export function projectPoint(p: Vec3, cam: ViewCamera): Pt2 {
   return [dot(p, cam.right), dot(p, cam.up)];
+}
+
+/** Signed area of a ring (positive = counter-clockwise in drawing space). */
+function ringArea(ring: Pt2[]): number {
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x0, y0] = ring[i];
+    const [x1, y1] = ring[(i + 1) % ring.length];
+    a += x0 * y1 - x1 * y0;
+  }
+  return a / 2;
 }
 
 const len2 = (v: Pt2) => Math.hypot(v[0], v[1]);
@@ -148,6 +161,52 @@ export function projectToDrawing(scene: Scene, cam: ViewCamera, opts: ProjectOpt
     const selected = pl.id === selectedId;
     prims.push({ type: 'polygon', pts: pos.map(P), color: pl.color, opacity: selected ? 0.5 : 0.36, depth, objectId: pl.id, selected });
     pos.forEach((p, i) => addSegment3(p, pos[(i + 1) % pos.length], pl.color, 'plane-edge', { objectId: pl.id, selected }));
+  }
+
+  // ---- 2D equations: a curve on the xy-plane, or (extend3d) the surface it sweeps along z ----
+  // Curves reach as far as infinite lines do (past the visible window). Surfaces stay inside the axis box
+  // (±axisRange, like Desmos' bounding box); a surface as large as an infinite line would cover the screen.
+  const lineExtent = opts.lineExtent ?? R * 1.6;
+  for (const eq of equations(scene)) {
+    if (!eq.visible) continue;
+    const parsed = parseEquation(eq.source);
+    if (!parsed.ok) continue;
+    const selected = eq.id === selectedId;
+    const eqExtent = eq.extend3d ? R : lineExtent;
+    // Quads of the surface; they are emitted as ONE translucent fill (see PolygonPrim.more).
+    const rings: Pt2[][] = [];
+    let depthSum = 0;
+    let depthCount = 0;
+    // A surface must fit the box on every axis, so the dependent variable is clamped to ±R as well.
+    for (const raw of sampleEquation(parsed, eqExtent, undefined, eq.extend3d ? R : undefined)) {
+      const line = simplifyPolyline(raw);
+      if (eq.extend3d) {
+        for (const quad of extrudeAlongZ(line, eqExtent)) {
+          const ring = quad.map(P);
+          if (Math.abs(ringArea(ring)) < 1e-9) continue; // edge-on to the camera: nothing to fill
+          // Front and back sheets project with opposite orientation; one orientation keeps the union intact.
+          rings.push(ringArea(ring) < 0 ? ring.reverse() : ring);
+          depthSum += quad.reduce((s, p) => s + dot(p, cam.forward), 0) / quad.length;
+          depthCount++;
+        }
+      }
+      // The curve itself stays drawn on z = 0 (for a surface it marks where it meets the xy-plane).
+      for (let i = 0; i < line.length - 1; i++) {
+        addSegment3(line[i], line[i + 1], eq.color, eq.extend3d ? 'plane-edge' : 'segment', { objectId: eq.id, selected });
+      }
+    }
+    if (rings.length > 0) {
+      prims.push({
+        type: 'polygon',
+        pts: rings[0],
+        more: rings.slice(1),
+        color: eq.color,
+        opacity: selected ? 0.5 : 0.36,
+        depth: depthSum / depthCount,
+        objectId: eq.id,
+        selected,
+      });
+    }
   }
 
   // ---- axes ----
@@ -443,6 +502,7 @@ export function computeBounds(prims: Prim[]): Bounds {
         break;
       case 'polygon':
         pr.pts.forEach(add);
+        pr.more?.forEach((ring) => ring.forEach(add));
         break;
       case 'arrow':
         add(pr.tip);

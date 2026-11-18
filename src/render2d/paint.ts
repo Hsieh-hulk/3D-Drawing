@@ -24,7 +24,8 @@ export interface StrokeSpec {
 
 export interface Painter {
   line(a: Pt2, b: Pt2, s: StrokeSpec): void;
-  polygon(pts: Pt2[], color: string, alpha: number): void;
+  /** Fills `pts` (and any `more` rings) as one path, so translucent overlaps are not blended twice. */
+  polygon(pts: Pt2[], color: string, alpha: number, more?: Pt2[][]): void;
   circle(c: Pt2, r: number, fill: string | null, stroke: { color: string; width: number } | null, alpha: number): void;
   /** Draws text with its left edge at x and its vertical centre at yMid. `halo` adds a white outline. */
   text(str: string, x: number, yMid: number, font: FontSpec, color: string, halo: boolean): void;
@@ -149,7 +150,7 @@ export function paintDrawing(p: Painter, drawing: Drawing, t: PxTransform, style
   for (const l of lines) if (l.role === 'grid') p.line(px(l.a), px(l.b), { color: l.color, width: lineWidthOf(l, k), dash: [], alpha: 1 });
 
   // 2. translucent planes, far to near
-  for (const poly of polys) p.polygon(poly.pts.map(px), poly.color, poly.opacity);
+  for (const poly of polys) p.polygon(poly.pts.map(px), poly.color, poly.opacity, poly.more?.map((r) => r.map(px)));
 
   // 3. hidden (dashed) lines and guides
   for (const l of lines) {
@@ -253,6 +254,7 @@ export function paintedBounds(measure: Painter['measure'], drawing: Drawing, t: 
       }
       case 'polygon':
         pr.pts.forEach((q) => add(...toPx(t, q)));
+        pr.more?.forEach((ring) => ring.forEach((q) => add(...toPx(t, q))));
         break;
       case 'arrow':
         add(...toPx(t, pr.tip), 6 * k);

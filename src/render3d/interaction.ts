@@ -100,7 +100,8 @@ export function hitTest(drawing: Drawing, t: PxTransform, x: number, y: number, 
   const polys = drawing.prims.filter((q): q is PolygonPrim => q.type === 'polygon' && !!q.objectId);
   polys.sort((a, b) => a.depth - b.depth); // nearest first
   for (const poly of polys) {
-    if (insidePolygon(p, poly.pts.map((q) => toPx(t, q)))) return { id: poly.objectId!, kind: 'plane' };
+    const rings = [poly.pts, ...(poly.more ?? [])];
+    if (rings.some((ring) => insidePolygon(p, ring.map((q) => toPx(t, q))))) return { id: poly.objectId!, kind: 'plane' };
   }
   return null;
 }

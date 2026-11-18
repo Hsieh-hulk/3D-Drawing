@@ -25,11 +25,13 @@ export class CanvasPainter implements Painter {
     ctx.globalAlpha = 1;
   }
 
-  polygon(pts: Pt2[], color: string, alpha: number): void {
+  polygon(pts: Pt2[], color: string, alpha: number, more: Pt2[][] = []): void {
     const ctx = this.ctx;
     ctx.beginPath();
-    pts.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
-    ctx.closePath();
+    for (const ring of [pts, ...more]) {
+      ring.forEach(([x, y], i) => (i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y)));
+      ctx.closePath();
+    }
     ctx.globalAlpha = alpha;
     ctx.fillStyle = color;
     ctx.fill();

@@ -1,9 +1,10 @@
-import { evaluate, formatNumber } from './expr';
+import { evaluate, formatNumber, parseEquation } from './expr';
 import {
   POINT_NAME_RE,
   VECTOR_NAME_RE,
   type Coord,
   type Coords,
+  type EquationObj,
   type PlaneObj,
   type PointObj,
   type Scene,
@@ -137,6 +138,8 @@ export function parseProject(text: string): ParseResult {
       }
     } else if (o.kind === 'segment' && ref(o.a) && ref(o.b) && o.a !== o.b) {
       obj = { ...base, kind: 'segment', a: o.a, b: o.b, infinite: isBool(o.infinite) && o.infinite } satisfies SegmentObj;
+    } else if (o.kind === 'equation' && isStr(o.source) && o.source.length <= 200 && parseEquation(o.source).ok) {
+      obj = { ...base, kind: 'equation', source: o.source, extend3d: o.extend3d === true } satisfies EquationObj;
     } else if (o.kind === 'plane' && Array.isArray(o.pointIds) && o.pointIds.length >= 3 && o.pointIds.every(ref)) {
       obj = { ...base, kind: 'plane', pointIds: [...(o.pointIds as string[])] } satisfies PlaneObj;
     } else if (

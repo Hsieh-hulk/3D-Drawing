@@ -62,7 +62,17 @@ export interface SolidObj extends BaseObj {
   faceColors?: (string | null)[];
 }
 
-export type SceneObject = PointObj | VectorObj | SegmentObj | PlaneObj | SolidObj;
+/**
+ * 2D equation in x and y (y = f(x) or x = f(y)). Drawn as a curve on the xy-plane, or — with `extend3d` —
+ * as the surface swept by that curve along the z-axis (like Desmos 3D's "延伸到 3D").
+ */
+export interface EquationObj extends BaseObj {
+  kind: 'equation';
+  source: string;
+  extend3d: boolean;
+}
+
+export type SceneObject = PointObj | VectorObj | SegmentObj | PlaneObj | SolidObj | EquationObj;
 
 export interface Scene {
   objects: SceneObject[];
@@ -96,6 +106,8 @@ export const planes = (scene: Scene): PlaneObj[] =>
   scene.objects.filter((o): o is PlaneObj => o.kind === 'plane');
 export const solids = (scene: Scene): SolidObj[] =>
   scene.objects.filter((o): o is SolidObj => o.kind === 'solid');
+export const equations = (scene: Scene): EquationObj[] =>
+  scene.objects.filter((o): o is EquationObj => o.kind === 'equation');
 
 export const PLANE_PALETTE = [
   '#5b8def',
@@ -188,6 +200,8 @@ export function objectName(scene: Scene, o: SceneObject): string {
       return `平面 ${planeLabel(scene, o)}`;
     case 'solid':
       return solidTitle(scene, o);
+    case 'equation':
+      return `方程式 ${o.source}`;
   }
 }
 
