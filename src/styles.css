@@ -321,23 +321,6 @@ body {
   flex: 1;
 }
 
-/* 4 × 2 keeps every symbol key at least 44px wide even in the 320px panel. */
-.symbol-row {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 4px;
-  margin-top: 8px;
-}
-
-.btn-symbol {
-  min-width: 0;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  font-size: 17px;
-  font-family: 'Times New Roman', 'Cambria Math', serif;
-}
-
 /* ---------- Bottom keyboard (Desmos-style dock) ---------- */
 .kbd-dock {
   position: relative; /* anchors the floating toggle */
@@ -677,8 +660,7 @@ body {
 }
 
 .icon-btn:focus-visible,
-.chip:focus-visible,
-.btn-symbol:focus-visible {
+.chip:focus-visible {
   outline: 2px solid var(--accent);
 }
 

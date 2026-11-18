@@ -6,8 +6,6 @@ import { applyKey, type KeypadAction } from './keypadEdit';
 import { NumericKeypad } from './NumericKeypad';
 
 const EXAMPLES = ['A(1, 2, 3)', 'B(0, √3, 1/2)', 'u = (1, -1, 2)', 'AB', '線段 BC', '直線 AC', '平面 ABC'];
-/** Symbols that are awkward to reach on the iPad on-screen keyboard (shown in system-keyboard mode). */
-const SYMBOLS = ['(', ')', ',', '=', '-', '/', '√', 'π'];
 const MODE_KEY = 'quickInput.keypadMode';
 
 /** The on-screen keyboard starts collapsed (Desmos-style); only an explicit 'keypad' choice reopens it. */
@@ -66,8 +64,6 @@ export function QuickInput() {
       el?.setSelectionRange(r.caret, r.caret);
     });
   };
-
-  const insert = (sym: string) => edit({ type: 'insert', text: sym });
 
   const toggleMode = () => {
     const next = !keypad;
@@ -135,23 +131,6 @@ export function QuickInput() {
           </>,
           dock,
         )}
-
-      {!keypad && (
-        <div className="symbol-row" role="group" aria-label="插入符號">
-          {SYMBOLS.map((s) => (
-            <button
-              key={s}
-              type="button"
-              className="btn btn-symbol"
-              onPointerDown={(e) => e.preventDefault()} // keep focus (and the iPad keyboard) on the input
-              onClick={() => insert(s)}
-              aria-label={`插入 ${s}`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
-      )}
 
       <p id="quick-feedback" className={`feedback ${feedback ? (feedback.ok ? 'is-ok' : 'is-error') : ''}`} aria-live="polite">
         {feedback?.text ?? ''}
